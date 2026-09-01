@@ -1,0 +1,747 @@
+"use client"
+
+import React, { useState, useEffect } from "react"
+import Link from "next/link"
+import { kamarService, KamarRoomRecord } from "@/lib/db"
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbLink,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb"
+import { Separator } from "@/components/ui/separator"
+import { SidebarTrigger } from "@/components/ui/sidebar"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  CardFooter,
+} from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogClose,
+} from "@/components/ui/dialog"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+} from "@/components/ui/pagination"
+import { Spinner } from "@/components/ui/spinner"
+import {
+  Zap,
+  Wifi,
+  Receipt,
+  Plus,
+  CheckCircle2,
+  Sparkles,
+  ArrowRight,
+  Clock,
+  Wallet,
+  Flame,
+  Check,
+  Search,
+  LayoutGrid,
+  List,
+} from "lucide-react"
+
+interface KosRoutineRequirement {
+  id: string
+  title: string
+  category: string
+  totalPrice: number
+  splitPeopleCount: number
+  perPersonPrice: number
+  dueDate: string
+  responsiblePerson: string
+  isPaidByMe: boolean
+  icon: React.ReactNode
+}
+
+export default function KebutuhanBulananKosPage() {
+  const membersCount = 4
+
+  // Notification Toast
+  const [notification, setNotification] = useState<string | null>(null)
+  const showNotification = (msg: string) => {
+    setNotification(msg)
+    setTimeout(() => setNotification(null), 4000)
+  }
+
+  // Routine Requirements & Room State
+  const [requirements, setRequirements] = useState<KosRoutineRequirement[]>([])
+  const [activeRoom, setActiveRoom] = useState<KamarRoomRecord | null>(null)
+
+  useEffect(() => {
+    async function loadRequirements() {
+      const room = kamarService.getUserRoom()
+      setActiveRoom(room)
+      const data = await kamarService.getRequirements()
+      const formatted = data.map((r) => ({
+        ...r,
+        icon: <Receipt className="size-4 text-primary" />,
+      }))
+      setRequirements(formatted)
+    }
+    loadRequirements()
+  }, [])
+
+  // View Mode State: 'table' (default) or 'grid'
+  const [viewMode, setViewMode] = useState<"table" | "grid">("table")
+
+  // Search & Filter State
+  const [searchQuery, setSearchQuery] = useState("")
+  const [categoryFilter, setCategoryFilter] = useState("all")
+
+  // Form State: Add New Requirement
+  const [isAddOpen, setIsAddOpen] = useState(false)
+  const [newTitle, setNewTitle] = useState("")
+  const [newCategory, setNewCategory] = useState("Listrik & Utilitas")
+  const [newTotalPrice, setNewTotalPrice] = useState("")
+  const [newSplitCount, setNewSplitCount] = useState("4")
+  const [newDueDate, setNewDueDate] = useState("25 Aug 2026")
+  const [newResponsible, setNewResponsible] = useState("Abimanyu")
+
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(6)
+
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [payingId, setPayingId] = useState<string | null>(null)
+
+  const formatNumberWithDots = (val: string): string => {
+    const digits = val.replace(/\D/g, "")
+    if (!digits) return ""
+    return Number(digits).toLocaleString("id-ID")
+  }
+
+  const parseFormattedNumber = (val: string): number => {
+    const digits = val.replace(/\D/g, "")
+    return parseFloat(digits) || 0
+  }
+
+  const handleAddRequirement = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const total = parseFormattedNumber(newTotalPrice)
+    const count = parseInt(newSplitCount) || 1
+    if (!newTitle || isNaN(total) || total <= 0) return
+
+    setIsSubmitting(true)
+    const perPerson = Math.ceil(total / count)
+
+    const list = await kamarService.getRequirements()
+    const updated = [
+      {
+        id: `REQ-${Date.now().toString().slice(-4)}`,
+        title: newTitle,
+        category: newCategory,
+        totalPrice: total,
+        splitPeopleCount: count,
+        perPersonPrice: perPerson,
+        dueDate: newDueDate,
+        responsiblePerson: newResponsible,
+        isPaidByMe: false,
+      },
+      ...list,
+    ]
+    if (typeof window !== "undefined") {
+      localStorage.setItem("myfinance_db_requirements", JSON.stringify(updated))
+    }
+
+    const refreshed = await kamarService.getRequirements()
+    setRequirements(refreshed.map((r) => ({ ...r, icon: <Receipt className="size-4 text-primary" /> })))
+    showNotification(`Kebutuhan bulanan "${newTitle}" (Rp ${total.toLocaleString("id-ID")}) berhasil disimpan ke database!`)
+
+    setNewTitle("")
+    setNewTotalPrice("")
+    setIsSubmitting(false)
+    setIsAddOpen(false)
+  }
+
+  // Handle Pay My Share & Auto-Deduct to Personal Transaction Log
+  const handlePayMyShare = async (id: string) => {
+    const item = requirements.find((r) => r.id === id)
+    if (!item || item.isPaidByMe) return
+
+    setPayingId(id)
+    await kamarService.payRequirement(id)
+    const refreshed = await kamarService.getRequirements()
+    setRequirements(refreshed.map((r) => ({ ...r, icon: <Receipt className="size-4 text-primary" /> })))
+
+    showNotification(
+      `Setoran Rp ${item.perPersonPrice.toLocaleString("id-ID")} untuk "${item.title}" berhasil dibayar & dicatat di database!`
+    )
+    setPayingId(null)
+  }
+
+  // Totals
+  const totalKosRequirements = requirements.reduce((sum, r) => sum + r.totalPrice, 0)
+  const totalMyMonthlyShare = requirements.reduce((sum, r) => sum + r.perPersonPrice, 0)
+  const totalMyPaidShare = requirements
+    .filter((r) => r.isPaidByMe)
+    .reduce((sum, r) => sum + r.perPersonPrice, 0)
+  const totalMyPendingShare = totalMyMonthlyShare - totalMyPaidShare
+
+  // Filter Logic
+  const filteredRequirements = requirements.filter((r) => {
+    const matchesSearch =
+      r.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      r.responsiblePerson.toLowerCase().includes(searchQuery.toLowerCase())
+    const matchesCategory =
+      categoryFilter === "all" || r.category.toLowerCase() === categoryFilter.toLowerCase()
+
+    return matchesSearch && matchesCategory
+  })
+
+  // Pagination Calculations
+  const totalItems = filteredRequirements.length
+  const totalPages = Math.ceil(totalItems / (pageSize || 6)) || 1
+  const startIndex = (currentPage - 1) * pageSize
+  const paginatedRequirements = filteredRequirements.slice(startIndex, startIndex + pageSize)
+
+  return (
+    <div className="flex flex-col min-w-0 max-w-full overflow-x-hidden">
+      {/* Header Bar (CLEAN: No Action Buttons in Top Header) */}
+      <header className="flex h-16 shrink-0 items-center justify-between gap-2 border-b px-4 min-w-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <SidebarTrigger className="-ml-1" />
+          <Separator
+            orientation="vertical"
+            className="mr-2 data-vertical:h-4 data-vertical:self-auto"
+          />
+          <Breadcrumb className="truncate">
+            <BreadcrumbList>
+              <BreadcrumbItem className="hidden sm:inline-flex">
+                <BreadcrumbLink href="#">Kamar Kos Bareng</BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator className="hidden sm:inline-flex" />
+              <BreadcrumbItem>
+                <BreadcrumbPage className="font-semibold text-base truncate">
+                  Kebutuhan Bulanan
+                </BreadcrumbPage>
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <div className="flex flex-1 flex-col gap-6 p-4 md:p-6 bg-background min-h-screen min-w-0 max-w-full">
+        {/* Toast Notification Banner */}
+        {notification && (
+          <div className="flex items-center gap-3 p-4 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-800 dark:text-emerald-300 text-xs font-medium animate-in fade-in slide-in-from-top-2">
+            <CheckCircle2 className="size-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <span>{notification}</span>
+          </div>
+        )}
+
+        {/* 1. Summary Metric Cards */}
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <Card className="shadow-none border border-border p-5 gap-3 bg-card">
+            <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
+              <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
+                Total Kebutuhan Kos (100%)
+              </CardTitle>
+              <div className="p-2 rounded-xl bg-muted/60 text-foreground">
+                <Receipt className="size-4" />
+              </div>
+            </CardHeader>
+            <CardContent className="p-0 space-y-1">
+              <div className="text-2xl font-bold tracking-tight text-foreground">
+                Rp {totalKosRequirements.toLocaleString("id-ID")}
+              </div>
+              <p className="text-xs text-muted-foreground">Total pengeluaran rutin bersama</p>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-none border border-border p-5 gap-3 bg-card">
+            <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
+              <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
+                Total Beban Saya / Bulan
+              </CardTitle>
+              <div className="p-2 rounded-xl bg-primary/10 text-primary">
+                <Wallet className="size-4" />
+              </div>
+            </CardHeader>
+            <CardContent className="p-0 space-y-1">
+              <div className="text-2xl font-bold tracking-tight text-foreground">
+                Rp {totalMyMonthlyShare.toLocaleString("id-ID")}
+              </div>
+              <p className="text-xs text-muted-foreground">Proporsi bagian Anda ({membersCount} orang)</p>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-none border border-border p-5 gap-3 bg-card">
+            <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
+              <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
+                Sudah Dibayar Saya
+              </CardTitle>
+              <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600">
+                <Check className="size-4" />
+              </div>
+            </CardHeader>
+            <CardContent className="p-0 space-y-1">
+              <div className="text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">
+                Rp {totalMyPaidShare.toLocaleString("id-ID")}
+              </div>
+              <p className="text-xs text-muted-foreground">Telah terpotong di log pribadi</p>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-none border border-border p-5 gap-3 bg-card">
+            <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
+              <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
+                Sisa Bagian Belum Bayar
+              </CardTitle>
+              <div className="p-2 rounded-xl bg-amber-500/10 text-amber-600">
+                <Clock className="size-4" />
+              </div>
+            </CardHeader>
+            <CardContent className="p-0 space-y-1">
+              <div className="text-2xl font-bold tracking-tight text-amber-600 dark:text-amber-400">
+                Rp {totalMyPendingShare.toLocaleString("id-ID")}
+              </div>
+              <p className="text-xs text-muted-foreground">Sisa iuran rutin Anda bulan ini</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* 2. Main Section: Table / Grid View of Requirements */}
+        <Card className="border border-border shadow-none p-4 md:p-5 gap-4 bg-card min-w-0 max-w-full">
+          {/* Section Header with Action Button & View Toggle */}
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-border pb-4">
+            <div>
+              <CardTitle className="text-base font-semibold flex items-center gap-2">
+                <Receipt className="size-5 text-primary shrink-0" />
+                Rincian Kebutuhan & Pembagian Per Orang
+              </CardTitle>
+              <CardDescription className="text-xs">
+                Setoran bagian Anda akan otomatis memotong/mencatat transaksi di log keuangan pribadi
+              </CardDescription>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {/* View Toggle Buttons */}
+              <div className="flex items-center p-1 rounded-lg bg-muted/60 border border-border">
+                <button
+                  type="button"
+                  onClick={() => setViewMode("table")}
+                  className={`p-1.5 rounded-md text-xs font-semibold flex items-center gap-1 transition-all ${
+                    viewMode === "table" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground"
+                  }`}
+                  title="Tampilan Tabel (Rekomendasi)"
+                >
+                  <List className="size-3.5" />
+                  <span className="hidden sm:inline">Tabel</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode("grid")}
+                  className={`p-1.5 rounded-md text-xs font-semibold flex items-center gap-1 transition-all ${
+                    viewMode === "grid" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground"
+                  }`}
+                  title="Tampilan Kartu / Grid"
+                >
+                  <LayoutGrid className="size-3.5" />
+                  <span className="hidden sm:inline">Kartu</span>
+                </button>
+              </div>
+
+              {/* Action Dialog Trigger (MOVED FROM HEADER TO SECTION) */}
+              <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+                <DialogTrigger asChild>
+                  <Button size="sm" className="shadow-none text-xs shrink-0">
+                    <Plus className="size-3.5 mr-1.5" /> Tambah Kebutuhan
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-md shadow-none border">
+                  <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2 text-base font-bold">
+                      <Plus className="size-5 text-primary" />
+                      Tambah Kebutuhan Bulanan Kos
+                    </DialogTitle>
+                    <DialogDescription className="text-xs">
+                      Daftarkan tagihan rutin atau iuran bersama kos beserta perhitungan pembagiannya.
+                    </DialogDescription>
+                  </DialogHeader>
+
+                  <form onSubmit={handleAddRequirement} className="space-y-4 pt-2">
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-muted-foreground">Nama Kebutuhan / Tagihan</label>
+                      <Input
+                        placeholder="Contoh: Tagihan Wifi Indihome, Token Listrik Utama"
+                        value={newTitle}
+                        onChange={(e) => setNewTitle(e.target.value)}
+                        required
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-muted-foreground">Total Harga (Rp)</label>
+                        <Input
+                          type="text"
+                          placeholder="0"
+                          value={newTotalPrice}
+                          onChange={(e) => setNewTotalPrice(formatNumberWithDots(e.target.value))}
+                          required
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-muted-foreground">Kategori</label>
+                        <Select value={newCategory} onValueChange={setNewCategory}>
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Kategori" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Listrik & Utilitas">Listrik & Utilitas</SelectItem>
+                            <SelectItem value="Internet & Wifi">Internet & Wifi</SelectItem>
+                            <SelectItem value="Kebersihan & Air">Kebersihan & Air</SelectItem>
+                            <SelectItem value="Dapur & Konsumsi">Gas & Dapur</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-muted-foreground">Dibagi Berapa Orang?</label>
+                        <Select value={newSplitCount} onValueChange={setNewSplitCount}>
+                          <SelectTrigger className="w-full font-semibold">
+                            <SelectValue placeholder="Jumlah Orang" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="2">2 Orang</SelectItem>
+                            <SelectItem value="3">3 Orang</SelectItem>
+                            <SelectItem value="4">4 Orang (Semua Penghuni)</SelectItem>
+                            <SelectItem value="5">5 Orang</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-muted-foreground">Jatuh Tempo</label>
+                        <Input
+                          placeholder="Contoh: 25 Aug 2026"
+                          value={newDueDate}
+                          onChange={(e) => setNewDueDate(e.target.value)}
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-muted-foreground">Penanggung Jawab Pembayaran</label>
+                      <Select value={newResponsible} onValueChange={setNewResponsible}>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Penanggung Jawab" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Abimanyu">Abimanyu (Ketua Kos)</SelectItem>
+                          <SelectItem value="Dimas Prasetyo">Dimas Prasetyo</SelectItem>
+                          <SelectItem value="Rizky Ramadhan">Rizky Ramadhan</SelectItem>
+                          <SelectItem value="Fajar Nugraha">Fajar Nugraha</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <DialogFooter className="pt-2">
+                      <DialogClose asChild>
+                        <Button type="button" variant="outline" className="shadow-none text-xs">
+                          Batal
+                        </Button>
+                      </DialogClose>
+                      <Button type="submit" disabled={isSubmitting} className="shadow-none text-xs">
+                        {isSubmitting ? (
+                          <div className="flex items-center gap-1.5">
+                            <Spinner className="size-3.5" />
+                            <span>Menyimpan...</span>
+                          </div>
+                        ) : (
+                          "Simpan Kebutuhan Kos"
+                        )}
+                      </Button>
+                    </DialogFooter>
+                  </form>
+                </DialogContent>
+              </Dialog>
+            </div>
+          </div>
+
+          {/* Search & Filter Bar */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+            <div className="w-full sm:w-64 relative">
+              <Search className="size-4 absolute left-3 top-2.5 text-muted-foreground" />
+              <Input
+                placeholder="Cari kebutuhan / PJ..."
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value)
+                  setCurrentPage(1)
+                }}
+                className="pl-9 text-xs h-9 border-border"
+              />
+            </div>
+
+            <Select
+              value={categoryFilter}
+              onValueChange={(val) => {
+                setCategoryFilter(val)
+                setCurrentPage(1)
+              }}
+            >
+              <SelectTrigger className="w-[160px] h-9 text-xs border-border">
+                <SelectValue placeholder="Semua Kategori" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua Kategori</SelectItem>
+                <SelectItem value="Listrik & Utilitas">Listrik & Utilitas</SelectItem>
+                <SelectItem value="Internet & Wifi">Internet & Wifi</SelectItem>
+                <SelectItem value="Kebersihan & Air">Kebersihan & Air</SelectItem>
+                <SelectItem value="Dapur & Konsumsi">Gas & Dapur</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* VIEW MODE: TABLE VIEW (Default & Highly Recommended) */}
+          {viewMode === "table" ? (
+            <CardContent className="p-0 overflow-hidden">
+              <div className="w-full overflow-x-auto">
+                <Table className="w-full min-w-[700px]">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="px-3.5 py-3 text-xs font-semibold text-muted-foreground">Kebutuhan & Kategori</TableHead>
+                      <TableHead className="px-3.5 py-3 text-xs font-semibold text-muted-foreground whitespace-nowrap">Jatuh Tempo & PJ</TableHead>
+                      <TableHead className="px-3.5 py-3 text-xs font-semibold text-muted-foreground whitespace-nowrap">Total Harga (100%)</TableHead>
+                      <TableHead className="px-3.5 py-3 text-xs font-semibold text-muted-foreground whitespace-nowrap">Pembagi</TableHead>
+                      <TableHead className="px-3.5 py-3 text-xs font-semibold text-muted-foreground whitespace-nowrap">Beban Saya</TableHead>
+                      <TableHead className="px-3.5 py-3 text-xs font-semibold text-muted-foreground whitespace-nowrap">Status Saya</TableHead>
+                      <TableHead className="px-3.5 py-3 text-xs font-semibold text-muted-foreground text-right whitespace-nowrap">Aksi Pelunasan</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {paginatedRequirements.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center py-8 text-xs text-muted-foreground">
+                          Tidak ada kebutuhan bulanan yang sesuai.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      paginatedRequirements.map((r) => (
+                        <TableRow key={r.id}>
+                          <TableCell className="px-3.5 py-3">
+                            <div className="font-bold text-xs text-foreground max-w-[200px] truncate">{r.title}</div>
+                            <Badge variant="outline" className="text-[10px] font-normal border-border py-0 px-1.5 mt-0.5">
+                              {r.category}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="px-3.5 py-3 text-xs text-muted-foreground whitespace-nowrap">
+                            <div>{r.dueDate}</div>
+                            <div className="text-[11px] text-muted-foreground">PJ: <strong>{r.responsiblePerson}</strong></div>
+                          </TableCell>
+                          <TableCell className="px-3.5 py-3 font-bold text-xs text-foreground whitespace-nowrap">
+                            Rp {r.totalPrice.toLocaleString("id-ID")}
+                          </TableCell>
+                          <TableCell className="px-3.5 py-3 text-xs text-muted-foreground whitespace-nowrap">
+                            {r.splitPeopleCount} Orang
+                          </TableCell>
+                          <TableCell className="px-3.5 py-3 font-extrabold text-xs text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
+                            Rp {r.perPersonPrice.toLocaleString("id-ID")}
+                          </TableCell>
+                          <TableCell className="px-3.5 py-3 whitespace-nowrap">
+                            {r.isPaidByMe ? (
+                              <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-none shadow-none text-[11px] font-semibold px-2 py-0.5">
+                                Lunas
+                              </Badge>
+                            ) : (
+                              <Badge className="bg-amber-500/15 text-amber-600 dark:text-amber-400 border-none shadow-none text-[11px] font-semibold px-2 py-0.5">
+                                Belum Bayar
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="px-3.5 py-3 text-right whitespace-nowrap">
+                            {r.isPaidByMe ? (
+                              <Badge variant="outline" className="text-[11px] font-normal border-border text-muted-foreground py-0 px-2">
+                                Terpotong di Log
+                              </Badge>
+                            ) : (
+                              <Button
+                                size="sm"
+                                className="h-7 text-xs shadow-none px-2.5"
+                                disabled={payingId === r.id}
+                                onClick={() => handlePayMyShare(r.id)}
+                              >
+                                {payingId === r.id ? (
+                                  <div className="flex items-center gap-1">
+                                    <Spinner className="size-3" />
+                                    <span>Memproses...</span>
+                                  </div>
+                                ) : (
+                                  <>
+                                    Bayar (Rp {r.perPersonPrice.toLocaleString("id-ID")}) <ArrowRight className="size-3 ml-1" />
+                                  </>
+                                )}
+                              </Button>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          ) : (
+            /* VIEW MODE: GRID CARDS VIEW */
+            <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {paginatedRequirements.map((r) => (
+                <Card key={r.id} className="border border-border shadow-none p-3.5 flex flex-col justify-between gap-2.5 bg-card">
+                  <CardHeader className="p-0 flex flex-row items-start justify-between space-y-0">
+                    <div className="space-y-0.5">
+                      <Badge variant="outline" className="text-[10px] font-normal py-0 px-1.5 border-border">
+                        {r.category}
+                      </Badge>
+                      <CardTitle className="text-sm font-bold truncate max-w-[150px]">{r.title}</CardTitle>
+                      <CardDescription className="text-[11px]">
+                        Tempo: {r.dueDate} • PJ: <strong>{r.responsiblePerson.split(" ")[0]}</strong>
+                      </CardDescription>
+                    </div>
+
+                    {r.isPaidByMe ? (
+                      <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-none shadow-none text-[10px] font-semibold px-1.5 py-0.5 shrink-0">
+                        Lunas
+                      </Badge>
+                    ) : (
+                      <Badge className="bg-amber-500/15 text-amber-600 dark:text-amber-400 border-none shadow-none text-[10px] font-semibold px-1.5 py-0.5 shrink-0">
+                        Belum Bayar
+                      </Badge>
+                    )}
+                  </CardHeader>
+
+                  <CardContent className="p-0 space-y-2">
+                    <div className="p-2 rounded-lg bg-muted/40 border border-border text-[11px] space-y-1">
+                      <div className="flex items-center justify-between text-muted-foreground">
+                        <span>Total Tagihan:</span>
+                        <span className="font-semibold text-foreground">Rp {r.totalPrice.toLocaleString("id-ID")}</span>
+                      </div>
+                      <div className="flex items-center justify-between font-bold pt-0.5 border-t border-border/50">
+                        <span>Beban Saya ({r.splitPeopleCount} Pghn):</span>
+                        <span className="text-emerald-600 dark:text-emerald-400">
+                          Rp {r.perPersonPrice.toLocaleString("id-ID")}
+                        </span>
+                      </div>
+                    </div>
+                  </CardContent>
+
+                  <CardFooter className="p-0 pt-2 border-t border-border">
+                    {r.isPaidByMe ? (
+                      <Button variant="outline" size="sm" className="w-full text-xs shadow-none border-border h-7" disabled>
+                        <CheckCircle2 className="size-3 mr-1 text-emerald-600" /> Terpotong di Log
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        className="w-full text-xs shadow-none h-7"
+                        onClick={() => handlePayMyShare(r.id)}
+                      >
+                        Bayar Bagian Saya <ArrowRight className="size-3 ml-1" />
+                      </Button>
+                    )}
+                  </CardFooter>
+                </Card>
+              ))}
+            </div>
+          )}
+
+          {/* Pagination Controls for Requirements */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-xs pt-2 border-t border-border">
+            {/* Rows / Items Per Page Selector */}
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground">Items per page</span>
+              <Select
+                value={String(pageSize)}
+                onValueChange={(val) => {
+                  setPageSize(Number(val))
+                  setCurrentPage(1)
+                }}
+              >
+                <SelectTrigger className="w-[70px] h-8 text-xs font-semibold shadow-none border-border">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="3">3</SelectItem>
+                  <SelectItem value="6">6</SelectItem>
+                  <SelectItem value="12">12</SelectItem>
+                  <SelectItem value="24">24</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Page Info & Prev/Next Buttons */}
+            <div className="flex items-center gap-4">
+              <span className="text-muted-foreground">
+                Page {currentPage} of {totalPages} ({totalItems} items)
+              </span>
+
+              <Pagination className="w-auto">
+                <PaginationContent>
+                  <PaginationItem>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs shadow-none border-border"
+                      disabled={currentPage <= 1}
+                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    >
+                      Previous
+                    </Button>
+                  </PaginationItem>
+
+                  <PaginationItem>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs shadow-none border-border"
+                      disabled={currentPage >= totalPages}
+                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                    >
+                      Next
+                    </Button>
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            </div>
+          </div>
+        </Card>
+      </div>
+    </div>
+  )
+}

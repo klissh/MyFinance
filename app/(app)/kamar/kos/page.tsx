@@ -1,0 +1,675 @@
+"use client"
+
+import React, { useState, useEffect } from "react"
+import Link from "next/link"
+import { kamarService, KamarRoomRecord } from "@/lib/db"
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbLink,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb"
+import { Separator } from "@/components/ui/separator"
+import { SidebarTrigger } from "@/components/ui/sidebar"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  CardFooter,
+} from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogClose,
+} from "@/components/ui/dialog"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+} from "@/components/ui/pagination"
+import { Spinner } from "@/components/ui/spinner"
+import {
+  Users,
+  Plus,
+  CheckCircle2,
+  TrendingUp,
+  TrendingDown,
+  Wallet,
+  Receipt,
+  Search,
+  ArrowRight,
+  Filter,
+} from "lucide-react"
+
+export interface SharedTransaction {
+  id: string
+  title: string
+  category: string
+  totalAmount: number
+  paidBy: string // Who fronted the cash
+  splitBetween: string[] // Who shares the bill
+  perPersonAmount: number
+  myShare: number // How much active user (Abimanyu) owes or is owed (>0 = owes, <0 = is owed, 0 = settled)
+  date: string
+  formattedDate: string
+  status: "settled" | "pending"
+}
+
+export default function TransaksiKosPage() {
+  const activeUser = "Abimanyu"
+  const members = ["Abimanyu", "Dimas Prasetyo", "Rizky Ramadhan", "Fajar Nugraha"]
+
+  // Notification Toast
+  const [notification, setNotification] = useState<string | null>(null)
+  const showNotification = (msg: string) => {
+    setNotification(msg)
+    setTimeout(() => setNotification(null), 4000)
+  }
+
+  // Shared Transactions & Room State
+  const [transactions, setTransactions] = useState<SharedTransaction[]>([])
+  const [activeRoom, setActiveRoom] = useState<KamarRoomRecord | null>(null)
+
+  useEffect(() => {
+    async function loadTransactions() {
+      const room = kamarService.getUserRoom()
+      setActiveRoom(room)
+      const data = await kamarService.getSharedTransactions()
+      setTransactions(data)
+    }
+    loadTransactions()
+  }, [])
+
+  // Filter & Search State
+  const [searchQuery, setSearchQuery] = useState("")
+  const [categoryFilter, setCategoryFilter] = useState("all")
+  const [statusFilter, setStatusFilter] = useState("all")
+
+  // Add Dialog State
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
+  const [newTitle, setNewTitle] = useState("")
+  const [newCategory, setNewCategory] = useState("Konsumsi Kos")
+  const [newTotalAmount, setNewTotalAmount] = useState("")
+  const [newPaidBy, setNewPaidBy] = useState("Abimanyu")
+  const [selectedMembers, setSelectedMembers] = useState<string[]>(members)
+
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(6)
+
+  const toggleMemberSelection = (memberName: string) => {
+    if (selectedMembers.includes(memberName)) {
+      if (selectedMembers.length > 1) {
+        setSelectedMembers(selectedMembers.filter((m) => m !== memberName))
+      }
+    } else {
+      setSelectedMembers([...selectedMembers, memberName])
+    }
+  }
+
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  const formatNumberWithDots = (val: string): string => {
+    const digits = val.replace(/\D/g, "")
+    if (!digits) return ""
+    return Number(digits).toLocaleString("id-ID")
+  }
+
+  const parseFormattedNumber = (val: string): number => {
+    const digits = val.replace(/\D/g, "")
+    return parseFloat(digits) || 0
+  }
+
+  const handleAddTransaction = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const total = parseFormattedNumber(newTotalAmount)
+    if (!newTitle || isNaN(total) || total <= 0) return
+
+    setIsSubmitting(true)
+    const perPerson = Math.ceil(total / selectedMembers.length)
+    const isPaidByMe = newPaidBy === activeUser
+    const amISharing = selectedMembers.includes(activeUser)
+
+    let myShareVal = 0
+    if (isPaidByMe) {
+      myShareVal = amISharing ? -(total - perPerson) : -total
+    } else {
+      myShareVal = amISharing ? perPerson : 0
+    }
+
+    await kamarService.addSharedTransaction({
+      title: newTitle,
+      category: newCategory,
+      totalAmount: total,
+      paidBy: newPaidBy,
+      splitBetween: selectedMembers,
+      perPersonAmount: perPerson,
+      myShare: myShareVal,
+      status: "pending",
+    })
+
+    const refreshed = await kamarService.getSharedTransactions()
+    setTransactions(refreshed)
+    showNotification(`Transaksi talangan "${newTitle}" sebesar Rp ${total.toLocaleString("id-ID")} berhasil dicatat ke database!`)
+
+    setNewTitle("")
+    setNewTotalAmount("")
+    setIsSubmitting(false)
+    setIsAddDialogOpen(false)
+  }
+
+  // Handle Settle Bill (Pelunasan Tagihan Saya langsung di tabel)
+  const handleSettleBill = (txId: string) => {
+    const targetTx = transactions.find((t) => t.id === txId)
+    if (!targetTx) return
+
+    const amt = targetTx.myShare
+
+    setTransactions(
+      transactions.map((t) => (t.id === txId ? { ...t, myShare: 0, status: "settled" } : t))
+    )
+
+    showNotification(`Pelunasan Rp ${amt.toLocaleString("id-ID")} ke ${targetTx.paidBy} untuk "${targetTx.title}" berhasil diselesaikan!`)
+  }
+
+  // Calculate Summary Metrics
+  const totalMyOwed = transactions
+    .filter((t) => t.myShare > 0)
+    .reduce((sum, t) => sum + t.myShare, 0)
+  const totalOthersOweMe = transactions
+    .filter((t) => t.myShare < 0)
+    .reduce((sum, t) => sum + Math.abs(t.myShare), 0)
+  const totalKosTransactionsMonth = transactions.reduce((sum, t) => sum + t.totalAmount, 0)
+
+  // Filtered Transactions Logic
+  const filteredTransactions = transactions.filter((t) => {
+    const matchesSearch =
+      t.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      t.paidBy.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      t.category.toLowerCase().includes(searchQuery.toLowerCase())
+
+    const matchesCategory =
+      categoryFilter === "all" || t.category.toLowerCase() === categoryFilter.toLowerCase()
+
+    const matchesStatus =
+      statusFilter === "all" ||
+      (statusFilter === "owes" && t.myShare > 0) ||
+      (statusFilter === "piutang" && t.myShare < 0) ||
+      (statusFilter === "settled" && t.myShare === 0)
+
+    return matchesSearch && matchesCategory && matchesStatus
+  })
+
+  // Pagination Calculations
+  const totalItems = filteredTransactions.length
+  const totalPages = Math.ceil(totalItems / (pageSize || 6)) || 1
+  const startIndex = (currentPage - 1) * pageSize
+  const paginatedTransactions = filteredTransactions.slice(startIndex, startIndex + pageSize)
+
+  return (
+    <div className="flex flex-col min-w-0 max-w-full overflow-x-hidden">
+      {/* Header Bar (CLEAN: No Action Buttons in Top Header) */}
+      <header className="flex h-16 shrink-0 items-center justify-between gap-2 border-b px-4 min-w-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <SidebarTrigger className="-ml-1" />
+          <Separator
+            orientation="vertical"
+            className="mr-2 data-vertical:h-4 data-vertical:self-auto"
+          />
+          <Breadcrumb className="truncate">
+            <BreadcrumbList>
+              <BreadcrumbItem className="hidden sm:inline-flex">
+                <BreadcrumbLink href="#">Kamar Kos Bareng</BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator className="hidden sm:inline-flex" />
+              <BreadcrumbItem>
+                <BreadcrumbPage className="font-semibold text-base truncate">
+                  Transaksi & Split Bill
+                </BreadcrumbPage>
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <div className="flex flex-1 flex-col gap-6 p-4 md:p-6 bg-background min-h-screen min-w-0 max-w-full">
+        {/* Toast Notification Banner */}
+        {notification && (
+          <div className="flex items-center gap-3 p-4 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-800 dark:text-emerald-300 text-xs font-medium animate-in fade-in slide-in-from-top-2">
+            <CheckCircle2 className="size-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <span>{notification}</span>
+          </div>
+        )}
+
+        {/* 1. Summary Metric Cards (Clean 3-Column Grid) */}
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card className="shadow-none border border-border p-5 gap-3 bg-card">
+            <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
+              <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
+                Tunggakan / Tagihan Saya
+              </CardTitle>
+              <div className="p-2 rounded-xl bg-rose-500/10 text-rose-600">
+                <TrendingDown className="size-4" />
+              </div>
+            </CardHeader>
+            <CardContent className="p-0 space-y-1">
+              <div className="text-2xl font-bold tracking-tight text-rose-600 dark:text-rose-400">
+                Rp {totalMyOwed.toLocaleString("id-ID")}
+              </div>
+              <p className="text-xs text-muted-foreground">Harus dibayar ke penghuni lain</p>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-none border border-border p-5 gap-3 bg-card">
+            <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
+              <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
+                Piutang Saya (Ditalangi Saya)
+              </CardTitle>
+              <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600">
+                <TrendingUp className="size-4" />
+              </div>
+            </CardHeader>
+            <CardContent className="p-0 space-y-1">
+              <div className="text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">
+                +Rp {totalOthersOweMe.toLocaleString("id-ID")}
+              </div>
+              <p className="text-xs text-muted-foreground">Penghuni lain utang ke saya</p>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-none border border-border p-5 gap-3 bg-card">
+            <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
+              <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
+                Total Transaksi Kos (Bulan Ini)
+              </CardTitle>
+              <div className="p-2 rounded-xl bg-muted/60 text-foreground">
+                <Receipt className="size-4" />
+              </div>
+            </CardHeader>
+            <CardContent className="p-0 space-y-1">
+              <div className="text-2xl font-bold tracking-tight">
+                Rp {totalKosTransactionsMonth.toLocaleString("id-ID")}
+              </div>
+              <p className="text-xs text-muted-foreground">{transactions.length} transaksi bersama</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* 2. Main Shared Transactions Table Section (With Action Button, Filters & Pagination) */}
+        <Card className="border border-border shadow-none p-4 md:p-5 gap-4 bg-card min-w-0 max-w-full">
+          {/* Section Header with Action Button Moved into Section */}
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-border pb-4">
+            <div>
+              <CardTitle className="text-base font-semibold flex items-center gap-2">
+                <Receipt className="size-5 text-primary shrink-0" />
+                Tabel Transaksi & Talangan Bersama Kos
+              </CardTitle>
+              <CardDescription className="text-xs">
+                Semua penghuni kamar dapat mencatat transaksi talangan & melunasi tagihan langsung dari tabel
+              </CardDescription>
+            </div>
+
+            {/* Catat Transaksi Button (MOVED FROM HEADER TO SECTION) */}
+            <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm" className="shadow-none text-xs shrink-0">
+                  <Plus className="size-4 mr-1.5" /> Catat Transaksi / Talangan Kos
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-md shadow-none border">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2 text-base font-bold">
+                    <Plus className="size-5 text-primary" />
+                    Catat Transaksi / Talangan Bersama
+                  </DialogTitle>
+                  <DialogDescription className="text-xs">
+                    Catat pengeluaran bersama kos. Pilihlah siapa yang menalangi & siapa saja yang menanggung.
+                  </DialogDescription>
+                </DialogHeader>
+
+                <form onSubmit={handleAddTransaction} className="space-y-4 pt-2">
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-muted-foreground">Keterangan Transaksi / Barang</label>
+                    <Input
+                      placeholder="Contoh: Makan Malam Bersama, Beli Galon, Wifi"
+                      value={newTitle}
+                      onChange={(e) => setNewTitle(e.target.value)}
+                      required
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-muted-foreground">Total Nominal Tagihan (Rp)</label>
+                      <Input
+                        type="text"
+                        placeholder="0"
+                        value={newTotalAmount}
+                        onChange={(e) => setNewTotalAmount(formatNumberWithDots(e.target.value))}
+                        required
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-muted-foreground">Kategori Pengeluaran</label>
+                      <Select value={newCategory} onValueChange={setNewCategory}>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Kategori" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Konsumsi Kos">Konsumsi Bersama</SelectItem>
+                          <SelectItem value="Kebersihan Kos">Galon & Kebersihan</SelectItem>
+                          <SelectItem value="Utilitas Kos">Listrik & Wifi</SelectItem>
+                          <SelectItem value="Dapur Kos">Gas & Dapur</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-muted-foreground">Dibayar / Ditalangi Oleh Siapa?</label>
+                    <Select value={newPaidBy} onValueChange={setNewPaidBy}>
+                      <SelectTrigger className="w-full font-semibold">
+                        <SelectValue placeholder="Pilih Penalang" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {members.map((m) => (
+                          <SelectItem key={m} value={m}>
+                            {m} {m === activeUser ? "(Saya)" : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Members Checklist */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground">Ditanggung Oleh (Beban Dibagi Ke):</label>
+                    <div className="grid grid-cols-2 gap-2 p-2.5 rounded-xl border border-border bg-muted/30">
+                      {members.map((m) => {
+                        const isSelected = selectedMembers.includes(m)
+                        return (
+                          <button
+                            key={m}
+                            type="button"
+                            onClick={() => toggleMemberSelection(m)}
+                            className={`py-1.5 px-2.5 rounded-lg text-xs font-semibold flex items-center justify-between border transition-all ${
+                              isSelected
+                                ? "bg-primary/10 border-primary/30 text-primary"
+                                : "bg-card border-border text-muted-foreground hover:text-foreground"
+                            }`}
+                          >
+                            <span>{m}</span>
+                            {isSelected && <CheckCircle2 className="size-3.5 text-primary" />}
+                          </button>
+                        )
+                      })}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground">
+                      Per orang menanggung:{" "}
+                      <strong className="text-foreground">
+                        Rp {Math.ceil((parseFormattedNumber(newTotalAmount) || 0) / selectedMembers.length).toLocaleString("id-ID")}
+                      </strong>
+                    </div>
+                  </div>
+
+                  <DialogFooter className="pt-2">
+                    <DialogClose asChild>
+                      <Button type="button" variant="outline" className="shadow-none text-xs">
+                        Batal
+                      </Button>
+                    </DialogClose>
+                    <Button type="submit" disabled={isSubmitting} className="shadow-none text-xs">
+                      {isSubmitting ? (
+                        <div className="flex items-center gap-1.5">
+                          <Spinner className="size-3.5" />
+                          <span>Menyimpan...</span>
+                        </div>
+                      ) : (
+                        "Simpan Transaksi Talangan"
+                      )}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </DialogContent>
+            </Dialog>
+          </div>
+
+          {/* Table Filter Controls Bar */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+            {/* Search Input */}
+            <div className="w-full sm:w-64 relative">
+              <Search className="size-4 absolute left-3 top-2.5 text-muted-foreground" />
+              <Input
+                placeholder="Cari transaksi / penalang..."
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value)
+                  setCurrentPage(1)
+                }}
+                className="pl-9 text-xs h-9 border-border"
+              />
+            </div>
+
+            {/* Filter Dropdowns */}
+            <div className="flex items-center gap-2">
+              <Select
+                value={categoryFilter}
+                onValueChange={(val) => {
+                  setCategoryFilter(val)
+                  setCurrentPage(1)
+                }}
+              >
+                <SelectTrigger className="w-[140px] h-9 text-xs border-border">
+                  <SelectValue placeholder="Kategori" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Kategori</SelectItem>
+                  <SelectItem value="Konsumsi Kos">Konsumsi Kos</SelectItem>
+                  <SelectItem value="Kebersihan Kos">Kebersihan Kos</SelectItem>
+                  <SelectItem value="Utilitas Kos">Utilitas Kos</SelectItem>
+                  <SelectItem value="Dapur Kos">Dapur Kos</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select
+                value={statusFilter}
+                onValueChange={(val) => {
+                  setStatusFilter(val)
+                  setCurrentPage(1)
+                }}
+              >
+                <SelectTrigger className="w-[130px] h-9 text-xs border-border">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Status</SelectItem>
+                  <SelectItem value="owes">Utang Saya</SelectItem>
+                  <SelectItem value="piutang">Piutang Saya</SelectItem>
+                  <SelectItem value="settled">Lunas</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Table */}
+          <CardContent className="p-0 overflow-hidden">
+            <div className="w-full overflow-x-auto">
+              <Table className="w-full min-w-[700px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="px-3.5 py-3 text-xs font-semibold text-muted-foreground whitespace-nowrap">Tanggal</TableHead>
+                    <TableHead className="px-3.5 py-3 text-xs font-semibold text-muted-foreground">Keterangan Transaksi</TableHead>
+                    <TableHead className="px-3.5 py-3 text-xs font-semibold text-muted-foreground whitespace-nowrap">Kategori</TableHead>
+                    <TableHead className="px-3.5 py-3 text-xs font-semibold text-muted-foreground whitespace-nowrap">Dibayar Oleh</TableHead>
+                    <TableHead className="px-3.5 py-3 text-xs font-semibold text-muted-foreground">Ditanggung Oleh</TableHead>
+                    <TableHead className="px-3.5 py-3 text-xs font-semibold text-muted-foreground whitespace-nowrap">Total Nominal</TableHead>
+                    <TableHead className="px-3.5 py-3 text-xs font-semibold text-muted-foreground text-right whitespace-nowrap">Bagian Saya</TableHead>
+                    <TableHead className="px-3.5 py-3 text-xs font-semibold text-muted-foreground text-right whitespace-nowrap">Aksi Pelunasan</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {paginatedTransactions.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center py-8 text-xs text-muted-foreground">
+                        Tidak ada transaksi kos yang sesuai dengan filter.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    paginatedTransactions.map((tx) => (
+                      <TableRow key={tx.id}>
+                        <TableCell className="px-3.5 py-3 text-xs text-muted-foreground font-medium whitespace-nowrap">
+                          {tx.formattedDate}
+                        </TableCell>
+                        <TableCell className="px-3.5 py-3 font-semibold text-xs max-w-[200px] truncate">
+                          {tx.title}
+                        </TableCell>
+                        <TableCell className="px-3.5 py-3 whitespace-nowrap">
+                          <Badge variant="outline" className="text-[11px] font-normal border-border py-0 px-2">
+                            {tx.category}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="px-3.5 py-3 text-xs font-bold text-foreground whitespace-nowrap">
+                          {tx.paidBy} {tx.paidBy === activeUser ? "(Saya)" : ""}
+                        </TableCell>
+                        <TableCell className="px-3.5 py-3 text-xs text-muted-foreground max-w-[160px] truncate">
+                          {tx.splitBetween.length === members.length
+                            ? "Semua Anggota (4)"
+                            : tx.splitBetween.join(", ")}
+                        </TableCell>
+                        <TableCell className="px-3.5 py-3 font-bold text-xs text-foreground whitespace-nowrap">
+                          Rp {tx.totalAmount.toLocaleString("id-ID")}
+                        </TableCell>
+                        <TableCell className="px-3.5 py-3 text-right font-bold text-xs whitespace-nowrap">
+                          {tx.myShare > 0 ? (
+                            <span className="text-rose-600 dark:text-rose-400">
+                              -Rp {tx.myShare.toLocaleString("id-ID")}
+                            </span>
+                          ) : tx.myShare < 0 ? (
+                            <span className="text-emerald-600 dark:text-emerald-400">
+                              +Rp {Math.abs(tx.myShare).toLocaleString("id-ID")}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground font-normal text-xs">Lunas</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="px-3.5 py-3 text-right whitespace-nowrap">
+                          {tx.myShare > 0 ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs shadow-none border-amber-500/40 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 font-semibold px-2"
+                              onClick={() => handleSettleBill(tx.id)}
+                            >
+                              Bayar Ke {tx.paidBy.split(" ")[0]} <ArrowRight className="size-3 ml-1" />
+                            </Button>
+                          ) : tx.myShare < 0 ? (
+                            <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-none shadow-none text-[11px] font-semibold px-2 py-0.5">
+                              Piutang Saya
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-[11px] font-normal border-border text-muted-foreground py-0 px-2">
+                              Lunas
+                            </Badge>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+
+          {/* Pagination Controls */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-xs pt-3 border-t border-border">
+            {/* Rows Per Page Selector */}
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground">Items per page</span>
+              <Select
+                value={String(pageSize)}
+                onValueChange={(val) => {
+                  setPageSize(Number(val))
+                  setCurrentPage(1)
+                }}
+              >
+                <SelectTrigger className="w-[70px] h-8 text-xs font-semibold shadow-none border-border">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="3">3</SelectItem>
+                  <SelectItem value="6">6</SelectItem>
+                  <SelectItem value="12">12</SelectItem>
+                  <SelectItem value="24">24</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Page Info & Prev/Next Buttons */}
+            <div className="flex items-center gap-4">
+              <span className="text-muted-foreground">
+                Page {currentPage} of {totalPages} ({totalItems} items)
+              </span>
+
+              <Pagination className="w-auto">
+                <PaginationContent>
+                  <PaginationItem>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs shadow-none border-border"
+                      disabled={currentPage <= 1}
+                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    >
+                      Previous
+                    </Button>
+                  </PaginationItem>
+
+                  <PaginationItem>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs shadow-none border-border"
+                      disabled={currentPage >= totalPages}
+                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                    >
+                      Next
+                    </Button>
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            </div>
+          </div>
+        </Card>
+      </div>
+    </div>
+  )
+}

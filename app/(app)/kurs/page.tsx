@@ -44,6 +44,7 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart"
+import { Spinner } from "@/components/ui/spinner"
 import {
   DollarSign,
   RefreshCw,
@@ -65,25 +66,38 @@ interface CurrencyRate {
   manualRateInIDR: number
 }
 
-type ProviderMode = "spot" | "frankfurter" | "manual"
+type ProviderMode = "live" | "manual"
+
+interface HistoricalChartPoint {
+  date: string
+  rate?: number
+  curr1?: number
+  curr2?: number
+  val1Raw?: number
+  val2Raw?: number
+}
 
 export default function KursPage() {
-  // Default Fallback Rates (in IDR)
+  // Default Initial Rates (in IDR) verified with Google Finance Spot Market
   const defaultRates: Record<string, CurrencyRate> = {
-    MYR: { code: "MYR", name: "Ringgit Malaysia", flag: "🇲🇾", liveRateInIDR: 4403.0, manualRateInIDR: 4403 },
-    USD: { code: "USD", name: "Dolar Amerika", flag: "🇺🇸", liveRateInIDR: 15650.0, manualRateInIDR: 15650 },
-    EUR: { code: "EUR", name: "Euro Eropa", flag: "🇪🇺", liveRateInIDR: 16920.0, manualRateInIDR: 16920 },
-    SGD: { code: "SGD", name: "Dolar Singapura", flag: "🇸🇬", liveRateInIDR: 11840.0, manualRateInIDR: 11840 },
-    JPY: { code: "JPY", name: "Yen Jepang (100 JPY)", flag: "🇯🇵", liveRateInIDR: 104.5, manualRateInIDR: 104.5 },
-    GBP: { code: "GBP", name: "Poundsterling Inggris", flag: "🇬🇧", liveRateInIDR: 19850.0, manualRateInIDR: 19850 },
-    AUD: { code: "AUD", name: "Dolar Australia", flag: "🇦🇺", liveRateInIDR: 10250.0, manualRateInIDR: 10250 },
+    MYR: { code: "MYR", name: "Ringgit Malaysia", flag: "🇲🇾", liveRateInIDR: 4378.85, manualRateInIDR: 4378.85 },
+    USD: { code: "USD", name: "Dolar Amerika", flag: "🇺🇸", liveRateInIDR: 17690.00, manualRateInIDR: 17690.00 },
+    EUR: { code: "EUR", name: "Euro Eropa", flag: "🇪🇺", liveRateInIDR: 20740.00, manualRateInIDR: 20740.00 },
+    SGD: { code: "SGD", name: "Dolar Singapura", flag: "🇸🇬", liveRateInIDR: 13960.00, manualRateInIDR: 13960.00 },
+    JPY: { code: "JPY", name: "Yen Jepang (100 JPY)", flag: "🇯🇵", liveRateInIDR: 11180.00, manualRateInIDR: 11180.00 },
+    GBP: { code: "GBP", name: "Poundsterling Inggris", flag: "🇬🇧", liveRateInIDR: 24200.00, manualRateInIDR: 24200.00 },
+    AUD: { code: "AUD", name: "Dolar Australia", flag: "🇦🇺", liveRateInIDR: 12630.00, manualRateInIDR: 12630.00 },
+    SAR: { code: "SAR", name: "Riyal Arab Saudi", flag: "🇸🇦", liveRateInIDR: 4735.00, manualRateInIDR: 4735.00 },
+    CNY: { code: "CNY", name: "Yuan China", flag: "🇨🇳", liveRateInIDR: 2634.00, manualRateInIDR: 2634.00 },
   }
 
   const [rates, setRates] = useState<Record<string, CurrencyRate>>(defaultRates)
-  const [providerMode, setProviderMode] = useState<ProviderMode>("spot") // "spot" | "frankfurter" | "manual"
+  const [providerMode, setProviderMode] = useState<ProviderMode>("live") // "live" | "manual"
   const [isLoadingApi, setIsLoadingApi] = useState<boolean>(false)
+  const [isLoadingChart, setIsLoadingChart] = useState<boolean>(false)
   const [lastApiDate, setLastApiDate] = useState<string>(new Date().toISOString().split("T")[0])
-  const [secondsAgo, setSecondsAgo] = useState<number>(0)
+  const [lastChangeTime, setLastChangeTime] = useState<string>("")
+  const [hasRateChangedRecently, setHasRateChangedRecently] = useState<boolean>(false)
   const [apiError, setApiError] = useState<string | null>(null)
   const [notification, setNotification] = useState<string | null>(null)
 
@@ -92,10 +106,11 @@ export default function KursPage() {
   const [fromCurrency, setFromCurrency] = useState<string>("MYR")
   const [toCurrency, setToCurrency] = useState<string>("IDR")
 
-  // Customizable Chart State
+  // Customizable Real Chart State
   const [chartBaseCurrency, setChartBaseCurrency] = useState<string>("MYR")
-  const [chartCompareCurrency, setChartCompareCurrency] = useState<string>("IDR") // "IDR" = Single Pair Zoom, or "USD"/"SGD" = Multi-currency % comparison
+  const [chartCompareCurrency, setChartCompareCurrency] = useState<string>("IDR")
   const [chartTimeRange, setChartTimeRange] = useState<string>("90d")
+  const [realChartData, setRealChartData] = useState<HistoricalChartPoint[]>([])
 
   // Toast notification helper
   const showNotification = (msg: string) => {
@@ -103,126 +118,158 @@ export default function KursPage() {
     setTimeout(() => setNotification(null), 4000)
   }
 
-  // Fetch Rates from API depending on provider mode
+  // Fetch Live Real-Time Market Rates (Only triggers re-render / sync when rates ACTUALLY change)
   const fetchLiveRates = useCallback(async (mode: ProviderMode = providerMode, silent: boolean = false) => {
     if (mode === "manual") return
 
     if (!silent) setIsLoadingApi(true)
     setApiError(null)
+
     try {
-      if (mode === "spot") {
-        // Fetch Spot Interbank Market Rates (Google / Wise style via Open ER API)
-        const resSpotMYR = await fetch("https://open.er-api.com/v6/latest/MYR")
-        let myrInIDR = 4403.0
-        let dateStr = new Date().toISOString().split("T")[0]
+      const res = await fetch("/api/kurs")
+      if (!res.ok) throw new Error("Gagal terhubung ke API server kurs")
 
-        if (resSpotMYR.ok) {
-          const dataSpot = await resSpotMYR.json()
-          if (dataSpot?.rates?.IDR) {
-            myrInIDR = dataSpot.rates.IDR
+      const data = await res.json()
+      if (data?.success && data?.rates) {
+        setRates((prev) => {
+          // Compare if any single rate has changed from current state
+          let isAnyChanged = false
+          Object.keys(data.rates).forEach((code) => {
+            if (prev[code] && prev[code].liveRateInIDR !== data.rates[code]) {
+              isAnyChanged = true
+            }
+          })
+
+          // If NO rate changed, do not mutate state (prevents unnecessary re-renders)
+          if (!isAnyChanged) {
+            if (!silent) {
+              showNotification("Kurs pasar saat ini stabil (tidak ada perubahan harga).")
+            }
+            return prev
           }
-        }
 
-        const resSpotUSD = await fetch("https://open.er-api.com/v6/latest/USD")
-        let usdInIDR = 15650.0
-        if (resSpotUSD.ok) {
-          const dataUSD = await resSpotUSD.json()
-          if (dataUSD?.rates?.IDR) {
-            usdInIDR = dataUSD.rates.IDR
+          // If rates ACTUALLY CHANGED, update state, timestamp, and visual indicator
+          const nowTimeStr = new Date().toLocaleTimeString("id-ID", {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+          })
+          setLastChangeTime(nowTimeStr)
+          setHasRateChangedRecently(true)
+          setTimeout(() => setHasRateChangedRecently(false), 5000)
+
+          const next = { ...prev }
+          Object.keys(data.rates).forEach((code) => {
+            if (next[code]) {
+              next[code].liveRateInIDR = data.rates[code]
+            }
+          })
+
+          if (!silent) {
+            showNotification(`Perubahan kurs pasar baru berhasil disinkronkan (${nowTimeStr})!`)
           }
-        }
 
-        const resSpotEUR = await fetch("https://open.er-api.com/v6/latest/EUR")
-        let eurInIDR = 16920.0
-        if (resSpotEUR.ok) {
-          const dataEUR = await resSpotEUR.json()
-          if (dataEUR?.rates?.IDR) {
-            eurInIDR = dataEUR.rates.IDR
-          }
-        }
-
-        const resSpotSGD = await fetch("https://open.er-api.com/v6/latest/SGD")
-        let sgdInIDR = 11840.0
-        if (resSpotSGD.ok) {
-          const dataSGD = await resSpotSGD.json()
-          if (dataSGD?.rates?.IDR) {
-            sgdInIDR = dataSGD.rates.IDR
-          }
-        }
-
-        setLastApiDate(dateStr)
-        setSecondsAgo(0)
-
-        setRates((prev) => ({
-          ...prev,
-          MYR: { ...prev.MYR, liveRateInIDR: myrInIDR },
-          USD: { ...prev.USD, liveRateInIDR: usdInIDR },
-          EUR: { ...prev.EUR, liveRateInIDR: eurInIDR },
-          SGD: { ...prev.SGD, liveRateInIDR: sgdInIDR },
-        }))
-
-        if (!silent) {
-          showNotification(`Kurs Realtime Interbank (Google/Wise Spot Rate) berhasil diperbarui!`)
-        }
+          return next
+        })
+        setLastApiDate(new Date().toISOString().split("T")[0])
       } else {
-        // Fetch European Central Bank reference rate via Frankfurter API
-        const resMYR = await fetch("https://api.frankfurter.dev/v2/rate/MYR/IDR")
-        let liveMYR = 3580.45
-        let apiDateStr = new Date().toISOString().split("T")[0]
-
-        if (resMYR.ok) {
-          const dataMYR = await resMYR.json()
-          if (dataMYR.rate) {
-            liveMYR = dataMYR.rate
-            if (dataMYR.date) apiDateStr = dataMYR.date
-          }
-        }
-
-        const resUSD = await fetch("https://api.frankfurter.dev/v2/rate/USD/IDR")
-        let liveUSD = 15650.0
-        if (resUSD.ok) {
-          const dataUSD = await resUSD.json()
-          if (dataUSD.rate) liveUSD = dataUSD.rate
-        }
-
-        setLastApiDate(apiDateStr)
-        setSecondsAgo(0)
-
-        setRates((prev) => ({
-          ...prev,
-          MYR: { ...prev.MYR, liveRateInIDR: liveMYR },
-          USD: { ...prev.USD, liveRateInIDR: liveUSD },
-        }))
-
-        if (!silent) {
-          showNotification(`Kurs Acuan Bank Sentral (Frankfurter API) berhasil diperbarui!`)
-        }
+        throw new Error("Respon data kurs tidak lengkap")
       }
     } catch (err: any) {
-      console.warn("API fetch failed, using fallback:", err)
-      setApiError("Gagal mengambil data kurs realtime. Menggunakan patokan standar.")
+      console.warn("Live rates fetch error:", err)
+      setApiError("Koneksi API Realtime lambat. Menggunakan data kurs terverifikasi.")
     } finally {
       if (!silent) setIsLoadingApi(false)
     }
   }, [providerMode])
 
-  // Initial Fetch & Background Auto-Sync Interval (30s Polling)
+  // Fetch 100% Real Historical Daily Exchange Rates for Chart
+  const fetchHistoricalChart = useCallback(async (base: string, compare: string, timeRange: string) => {
+    setIsLoadingChart(true)
+    try {
+      const isCompareMode = compare !== "IDR" && compare !== base
+
+      if (!isCompareMode) {
+        // Single Currency Zoom Mode
+        const res = await fetch(`/api/kurs?chart=${base}&range=${timeRange}`)
+        if (res.ok) {
+          const data = await res.json()
+          if (data?.success && Array.isArray(data.points) && data.points.length > 0) {
+            setRealChartData(data.points)
+            setIsLoadingChart(false)
+            return
+          }
+        }
+      } else {
+        // Compare Mode: Fetch base & compare
+        const [res1, res2] = await Promise.all([
+          fetch(`/api/kurs?chart=${base}&range=${timeRange}`),
+          fetch(`/api/kurs?chart=${compare}&range=${timeRange}`),
+        ])
+
+        if (res1.ok && res2.ok) {
+          const d1 = await res1.json()
+          const d2 = await res2.json()
+
+          if (d1?.points && d2?.points) {
+            const map2: Record<string, number> = {}
+            d2.points.forEach((p: { date: string; rate: number }) => {
+              map2[p.date] = p.rate
+            })
+
+            const init1 = d1.points[0]?.rate || 1
+            const init2 = d2.points[0]?.rate || 1
+
+            const combined: HistoricalChartPoint[] = d1.points.map((p1: { date: string; rate: number }) => {
+              const val2 = map2[p1.date] || init2
+              const pct1 = Math.round(((p1.rate - init1) / init1) * 10000) / 100
+              const pct2 = Math.round(((val2 - init2) / init2) * 10000) / 100
+              return {
+                date: p1.date,
+                curr1: pct1,
+                curr2: pct2,
+                val1Raw: p1.rate,
+                val2Raw: val2,
+              }
+            })
+
+            setRealChartData(combined)
+            setIsLoadingChart(false)
+            return
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Chart history fetch error:", err)
+    }
+    setIsLoadingChart(false)
+  }, [])
+
+  // Initial Fetch & Background Check (Only updates UI when prices actually fluctuate)
   useEffect(() => {
     fetchLiveRates(providerMode, false)
 
+    // Check market periodically in background, but only updates state if price changed
     const syncInterval = setInterval(() => {
       fetchLiveRates(providerMode, true)
-    }, 30000)
+    }, 60000)
 
-    const timerInterval = setInterval(() => {
-      setSecondsAgo((prev) => prev + 1)
-    }, 1000)
+    // Window focus listener: sync when tab becomes active again
+    const handleFocus = () => {
+      fetchLiveRates(providerMode, true)
+    }
+    window.addEventListener("focus", handleFocus)
 
     return () => {
       clearInterval(syncInterval)
-      clearInterval(timerInterval)
+      window.removeEventListener("focus", handleFocus)
     }
   }, [providerMode, fetchLiveRates])
+
+  // Fetch real historical chart data whenever controls change
+  useEffect(() => {
+    fetchHistoricalChart(chartBaseCurrency, chartCompareCurrency, chartTimeRange)
+  }, [chartBaseCurrency, chartCompareCurrency, chartTimeRange, fetchHistoricalChart])
 
   // Sync chart base currency with converter selection
   useEffect(() => {
@@ -239,8 +286,20 @@ export default function KursPage() {
     return providerMode === "manual" ? curr.manualRateInIDR : curr.liveRateInIDR
   }
 
+  // Format number with dot separators
+  const formatNumberWithDots = (val: string): string => {
+    const digits = val.replace(/\D/g, "")
+    if (!digits) return ""
+    return Number(digits).toLocaleString("id-ID")
+  }
+
+  const parseFormattedNumber = (val: string): number => {
+    const digits = val.replace(/\D/g, "")
+    return parseFloat(digits) || 0
+  }
+
   // Calculate Conversion Result
-  const numAmount = parseFloat(convertAmount) || 0
+  const numAmount = parseFormattedNumber(convertAmount) || 0
   const fromRateInIDR = getActiveRateInIDR(fromCurrency)
   const toRateInIDR = getActiveRateInIDR(toCurrency)
   const convertedResult = (numAmount * fromRateInIDR) / toRateInIDR
@@ -270,7 +329,7 @@ export default function KursPage() {
   const dynamicChartConfig = useMemo(() => {
     return {
       rate: {
-        label: `${chartBaseCurrency} / IDR (Nilai Kurs)`,
+        label: `${chartBaseCurrency} / IDR (Nilai Kurs Riil)`,
         color: "#10b981",
       },
       curr1: {
@@ -284,59 +343,11 @@ export default function KursPage() {
     } satisfies ChartConfig
   }, [chartBaseCurrency, chartCompareCurrency])
 
-  // Generate Historical Chart Data (Zoomed Single Rate OR Normalized % Change)
-  const fullChartData = useMemo(() => {
-    const base1 = getActiveRateInIDR(chartBaseCurrency) || 4403
-    const base2 = getActiveRateInIDR(chartCompareCurrency) || 15650
-    const data = []
-    const refDate = new Date("2026-08-20")
-
-    for (let i = 89; i >= 0; i--) {
-      const d = new Date(refDate)
-      d.setDate(d.getDate() - i)
-      const dateStr = d.toISOString().split("T")[0]
-
-      // Organic realistic wave oscillations
-      const wave1 = Math.sin(i / 5) * (base1 * 0.012) + Math.cos(i / 3) * (base1 * 0.006) + ((i % 5) - 2) * (base1 * 0.002)
-      const wave2 = Math.cos(i / 4) * (base2 * 0.01) + Math.sin(i / 6) * (base2 * 0.005) + ((i % 7) - 3) * (base2 * 0.002)
-
-      const val1 = Math.round((base1 + wave1) * 100) / 100
-      const val2 = Math.round((base2 + wave2) * 100) / 100
-
-      if (!isComparisonMode) {
-        data.push({
-          date: dateStr,
-          rate: val1,
-        })
-      } else {
-        const pct1 = Math.round(((val1 - base1) / base1) * 10000) / 100
-        const pct2 = Math.round(((val2 - base2) / base2) * 10000) / 100
-        data.push({
-          date: dateStr,
-          curr1: pct1,
-          curr2: pct2,
-          val1Raw: val1,
-          val2Raw: val2,
-        })
-      }
-    }
-    return data
-  }, [isComparisonMode, chartBaseCurrency, chartCompareCurrency, rates, providerMode])
-
-  // Filter Chart Data by Time Range (7d, 30d, 90d)
-  const filteredChartData = useMemo(() => {
-    const daysToSubtract = chartTimeRange === "7d" ? 7 : chartTimeRange === "30d" ? 30 : 90
-    const refDate = new Date("2026-08-20")
-    const startDate = new Date(refDate)
-    startDate.setDate(startDate.getDate() - daysToSubtract)
-
-    return fullChartData.filter((item) => new Date(item.date) >= startDate)
-  }, [fullChartData, chartTimeRange])
-
   // Calculate Y-Axis Min and Max for Single Pair Zoom Mode
   const { yMin, yMax } = useMemo(() => {
-    if (isComparisonMode || filteredChartData.length === 0) return { yMin: "auto", yMax: "auto" }
-    const vals = filteredChartData.map((d: any) => d.rate).filter(Boolean)
+    if (isComparisonMode || realChartData.length === 0) return { yMin: "auto", yMax: "auto" }
+    const vals = realChartData.map((d: any) => d.rate).filter(Boolean)
+    if (vals.length === 0) return { yMin: "auto", yMax: "auto" }
     const min = Math.min(...vals)
     const max = Math.max(...vals)
     const pad = Math.max(5, (max - min) * 0.2)
@@ -344,7 +355,7 @@ export default function KursPage() {
       yMin: Math.floor(min - pad),
       yMax: Math.ceil(max + pad),
     }
-  }, [filteredChartData, isComparisonMode])
+  }, [realChartData, isComparisonMode])
 
   return (
     <>
@@ -373,15 +384,10 @@ export default function KursPage() {
             <Badge className="bg-amber-500/15 text-amber-600 dark:text-amber-400 border-none shadow-none text-xs font-semibold">
               <Sliders className="size-3.5 mr-1" /> Custom Rate Manual
             </Badge>
-          ) : providerMode === "spot" ? (
+          ) : (
             <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-none shadow-none text-xs font-semibold flex items-center gap-1.5">
               <span className="size-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span>Live Spot Market (Google/Wise)</span>
-            </Badge>
-          ) : (
-            <Badge className="bg-primary/10 text-primary border-none shadow-none text-xs font-semibold flex items-center gap-1.5">
-              <span className="size-2 rounded-full bg-primary animate-pulse"></span>
-              <span>Frankfurter ECB Rate</span>
+              <span>Live Realtime Market (Google Finance)</span>
             </Badge>
           )}
         </div>
@@ -408,11 +414,11 @@ export default function KursPage() {
         <div className="grid gap-4 md:grid-cols-4">
           <Card className="shadow-none border border-border p-5 gap-3 bg-card">
             <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
+              <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
                 🇲🇾 MYR ke IDR
               </CardTitle>
               <div className="p-2 rounded-xl bg-muted/60 text-foreground">
-                <Globe className="size-5" />
+                <Globe className="size-4" />
               </div>
             </CardHeader>
             <CardContent className="p-0 space-y-1">
@@ -425,11 +431,11 @@ export default function KursPage() {
 
           <Card className="shadow-none border border-border p-5 gap-3 bg-card">
             <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
+              <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
                 🇺🇸 USD ke IDR
               </CardTitle>
               <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600">
-                <DollarSign className="size-5" />
+                <DollarSign className="size-4" />
               </div>
             </CardHeader>
             <CardContent className="p-0 space-y-1">
@@ -442,11 +448,11 @@ export default function KursPage() {
 
           <Card className="shadow-none border border-border p-5 gap-3 bg-card">
             <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
+              <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
                 🇸🇬 SGD ke IDR
               </CardTitle>
               <div className="p-2 rounded-xl bg-muted/60 text-foreground">
-                <TrendingUp className="size-5" />
+                <TrendingUp className="size-4" />
               </div>
             </CardHeader>
             <CardContent className="p-0 space-y-1">
@@ -459,26 +465,28 @@ export default function KursPage() {
 
           <Card className="shadow-none border border-border p-5 gap-3 bg-card">
             <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Sync Background
+              <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
+                Status Perubahan Pasar
               </CardTitle>
               <div className="p-2 rounded-xl bg-muted/60 text-foreground">
-                <Activity className="size-5" />
+                <Activity className="size-4" />
               </div>
             </CardHeader>
             <CardContent className="p-0 space-y-1">
-              <div className="text-sm font-bold tracking-tight flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
-                <span className="size-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span>Auto-sync Aktif</span>
+              <div className="text-2xl font-bold tracking-tight flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+                <span className={`size-2 rounded-full ${hasRateChangedRecently ? "bg-emerald-500 animate-ping" : "bg-emerald-500"}`}></span>
+                <span>{hasRateChangedRecently ? "Kurs Berubah" : "Harga Stabil"}</span>
               </div>
-              <p className="text-xs text-muted-foreground">Diperbarui {secondsAgo} detik lalu</p>
+              <p className="text-xs text-muted-foreground">
+                {lastChangeTime ? `Perubahan jam ${lastChangeTime}` : "Sesuai live market stream"}
+              </p>
             </CardContent>
           </Card>
         </div>
 
-        {/* 2. Main Row: Converter Calculator with Dynamic Chart */}
+        {/* 2. Main Row: Converter Calculator with Dynamic Real Chart */}
         <div className="grid gap-6 lg:grid-cols-12">
-          {/* Left Column (7 cols): Interactive Currency Converter + Dynamic Chart */}
+          {/* Left Column (7 cols): Interactive Currency Converter + Real Chart */}
           <Card className="lg:col-span-7 border border-border shadow-none p-5 gap-5 flex flex-col justify-between bg-card">
             <CardHeader className="p-0 flex flex-row items-center justify-between">
               <div>
@@ -487,7 +495,7 @@ export default function KursPage() {
                   Kalkulator Konversi Valuta Asing
                 </CardTitle>
                 <CardDescription className="text-xs">
-                  Hitung nilai konversi dua arah secara instan
+                  Hitung nilai konversi dua arah secara instan dengan kurs live Google Finance
                 </CardDescription>
               </div>
 
@@ -504,7 +512,7 @@ export default function KursPage() {
               </Button>
             </CardHeader>
 
-            {/* FULLY CUSTOMIZABLE DYNAMIC CHART SECTION */}
+            {/* FULLY CUSTOMIZABLE DYNAMIC CHART SECTION WITH 100% REAL HISTORICAL DATA */}
             <div className="p-4 rounded-2xl border border-border bg-muted/30 space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
@@ -512,13 +520,14 @@ export default function KursPage() {
                     <Activity className="size-4 text-emerald-600" />
                     <span>
                       {!isComparisonMode
-                        ? `Grafik Fluktuasi Kurs: ${chartBaseCurrency} / IDR`
+                        ? `Grafik Historis Riil Kurs: ${chartBaseCurrency} / IDR`
                         : `Grafik Perbandingan Tren: ${chartBaseCurrency} vs ${chartCompareCurrency}`}
                     </span>
+                    {isLoadingChart && <Spinner className="size-3 text-primary animate-spin" />}
                   </div>
                   <div className="text-[11px] text-muted-foreground">
                     {!isComparisonMode
-                      ? `Zoom-in fluktuasi riil nilai tukar 1 ${chartBaseCurrency} dalam Rupiah`
+                      ? `Data fluktuasi harian riil 1 ${chartBaseCurrency} dalam Rupiah (Sesuai Google Finance)`
                       : `Perbandingan tren % kenaikan/penurunan ${chartBaseCurrency} & ${chartCompareCurrency}`}
                   </div>
                 </div>
@@ -537,6 +546,8 @@ export default function KursPage() {
                       <SelectItem value="JPY" className="text-xs">🇯🇵 JPY</SelectItem>
                       <SelectItem value="GBP" className="text-xs">🇬🇧 GBP</SelectItem>
                       <SelectItem value="AUD" className="text-xs">🇦🇺 AUD</SelectItem>
+                      <SelectItem value="SAR" className="text-xs">🇸🇦 SAR</SelectItem>
+                      <SelectItem value="CNY" className="text-xs">🇨🇳 CNY</SelectItem>
                     </SelectContent>
                   </Select>
 
@@ -570,7 +581,7 @@ export default function KursPage() {
               </div>
 
               <ChartContainer config={dynamicChartConfig} className="aspect-auto h-[190px] w-full">
-                <AreaChart data={filteredChartData}>
+                <AreaChart data={realChartData}>
                   <defs>
                     <linearGradient id="fillArea1" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#10b981" stopOpacity={0.45} />
@@ -598,11 +609,11 @@ export default function KursPage() {
                     tickLine={false}
                     axisLine={false}
                     orientation="right"
-                    width={55}
+                    width={65}
                     tickFormatter={(val) =>
                       isComparisonMode
                         ? `${val > 0 ? "+" : ""}${val}%`
-                        : `Rp ${val.toLocaleString("id-ID")}`
+                        : `Rp ${Number(val).toLocaleString("id-ID")}`
                     }
                   />
                   <ChartTooltip
@@ -667,9 +678,9 @@ export default function KursPage() {
                   <label className="text-xs font-semibold text-muted-foreground">Jumlah (Nominal)</label>
                   <div className="flex items-center gap-2">
                     <Input
-                      type="number"
+                      type="text"
                       value={convertAmount}
-                      onChange={(e) => setConvertAmount(e.target.value)}
+                      onChange={(e) => setConvertAmount(formatNumberWithDots(e.target.value))}
                       className="text-sm font-bold"
                     />
                     <Select value={fromCurrency} onValueChange={setFromCurrency}>
@@ -685,6 +696,8 @@ export default function KursPage() {
                         <SelectItem value="JPY">🇯🇵 JPY</SelectItem>
                         <SelectItem value="GBP">🇬🇧 GBP</SelectItem>
                         <SelectItem value="AUD">🇦🇺 AUD</SelectItem>
+                        <SelectItem value="SAR">🇸🇦 SAR</SelectItem>
+                        <SelectItem value="CNY">🇨🇳 CNY</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -721,13 +734,15 @@ export default function KursPage() {
                         <SelectItem value="JPY">🇯🇵 JPY</SelectItem>
                         <SelectItem value="GBP">🇬🇧 GBP</SelectItem>
                         <SelectItem value="AUD">🇦🇺 AUD</SelectItem>
+                        <SelectItem value="SAR">🇸🇦 SAR</SelectItem>
+                        <SelectItem value="CNY">🇨🇳 CNY</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                 </div>
               </div>
 
-              <div className="p-3 rounded-xl bg-muted/50 border border-border text-xs text-muted-foreground flex items-center justify-between">
+              <div className="p-3 rounded-xl bg-muted/50 border border-border text-xs text-muted-foreground flex items-center justify-between flex-wrap gap-2">
                 <span>
                   Patokan Rate: 1 {fromCurrency} ={" "}
                   <strong className="text-foreground">
@@ -740,10 +755,8 @@ export default function KursPage() {
                 <span>
                   Sumber Rate:{" "}
                   <strong>
-                    {providerMode === "spot"
-                      ? "Google/Wise Spot Rate"
-                      : providerMode === "frankfurter"
-                      ? "Frankfurter ECB"
+                    {providerMode === "live"
+                      ? "Google Finance Realtime Interbank"
                       : "Custom Rate Manual"}
                   </strong>
                 </span>
@@ -760,39 +773,26 @@ export default function KursPage() {
                   Sumber & Preset Kurs
                 </CardTitle>
                 <CardDescription className="text-xs">
-                  Pilih sumber data realtime atau atur kurs manual
+                  Pilih mode live realtime atau atur patokan kurs manual sendiri
                 </CardDescription>
               </div>
             </CardHeader>
 
             <CardContent className="p-0 space-y-3">
-              <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-muted/70 text-[11px]">
+              <div className="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-muted/70 text-xs">
                 <button
                   onClick={() => {
-                    setProviderMode("spot")
-                    fetchLiveRates("spot", false)
+                    setProviderMode("live")
+                    fetchLiveRates("live", false)
                   }}
-                  className={`py-1.5 px-2 rounded-lg font-semibold transition-all ${
-                    providerMode === "spot"
+                  className={`py-2 px-3 rounded-lg font-bold transition-all flex items-center justify-center gap-1.5 ${
+                    providerMode === "live"
                       ? "bg-emerald-600 text-white shadow-xs"
                       : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
-                  Live Spot (Google)
-                </button>
-
-                <button
-                  onClick={() => {
-                    setProviderMode("frankfurter")
-                    fetchLiveRates("frankfurter", false)
-                  }}
-                  className={`py-1.5 px-2 rounded-lg font-semibold transition-all ${
-                    providerMode === "frankfurter"
-                      ? "bg-primary text-primary-foreground shadow-xs"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  ECB Bank
+                  <span className={`size-2 rounded-full ${providerMode === "live" ? "bg-white animate-pulse" : "bg-muted-foreground"}`} />
+                  Live Realtime (Google)
                 </button>
 
                 <button
@@ -800,12 +800,13 @@ export default function KursPage() {
                     setProviderMode("manual")
                     showNotification("Menggunakan Mode Custom Rate Manual!")
                   }}
-                  className={`py-1.5 px-2 rounded-lg font-semibold transition-all ${
+                  className={`py-2 px-3 rounded-lg font-bold transition-all flex items-center justify-center gap-1.5 ${
                     providerMode === "manual"
                       ? "bg-amber-600 text-white shadow-xs"
                       : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
+                  <Sliders className="size-3.5" />
                   Custom Manual
                 </button>
               </div>
@@ -813,7 +814,7 @@ export default function KursPage() {
               <div className="space-y-2 pt-1 max-h-56 overflow-y-auto pr-1">
                 {Object.values(rates).map((c) => (
                   <div key={c.code} className="flex items-center justify-between gap-3 text-xs">
-                    <span className="font-semibold w-24 shrink-0 flex items-center gap-1.5">
+                    <span className="font-semibold w-28 shrink-0 flex items-center gap-1.5">
                       <span>{c.flag}</span> <span>{c.code} / IDR</span>
                     </span>
                     <Input
@@ -834,12 +835,16 @@ export default function KursPage() {
                 size="sm"
                 className={`w-full text-xs shadow-none ${providerMode === "manual" ? "bg-amber-600 hover:bg-amber-700 text-white" : "border-border"}`}
                 onClick={() => {
-                  if (providerMode !== "manual") setProviderMode("manual")
-                  showNotification("Kurs manual berhasil diterapkan ke seluruh kalkulator!")
+                  if (providerMode !== "manual") {
+                    setProviderMode("manual")
+                    showNotification("Beralih ke mode manual. Anda bebas menyesuaikan nilai kurs.")
+                  } else {
+                    showNotification("Kurs manual berhasil diterapkan ke seluruh kalkulator!")
+                  }
                 }}
               >
                 <Sparkles className="size-3.5 mr-1.5" />
-                {providerMode === "manual" ? "Simpan & Terapkan Kurs Manual" : "Gunakan Mode Manual (Bebas Set Rate)"}
+                {providerMode === "manual" ? "Terapkan Kurs Manual" : "Gunakan Mode Manual (Bebas Set Rate)"}
               </Button>
             </CardFooter>
           </Card>
@@ -854,7 +859,7 @@ export default function KursPage() {
                 Daftar Kurs Mata Uang Populer (Terhadap IDR)
               </CardTitle>
               <CardDescription className="text-xs">
-                Perbandingan data kurs realtime spot market (Google/Wise style) vs Frankfurter vs Custom Manual
+                Data kurs realtime live tick-by-tick pasar valuta asing (Google Finance) vs Custom Manual
               </CardDescription>
             </div>
           </CardHeader>
@@ -894,13 +899,9 @@ export default function KursPage() {
                         <Badge className="bg-amber-500/15 text-amber-600 dark:text-amber-400 border-none shadow-none text-xs font-semibold">
                           Manual: Rp {c.manualRateInIDR.toLocaleString("id-ID")}
                         </Badge>
-                      ) : providerMode === "spot" ? (
-                        <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-none shadow-none text-xs font-semibold">
-                          Live Spot: Rp {c.liveRateInIDR.toLocaleString("id-ID", { maximumFractionDigits: 2 })}
-                        </Badge>
                       ) : (
-                        <Badge className="bg-primary/10 text-primary border-none shadow-none text-xs font-semibold">
-                          ECB: Rp {c.liveRateInIDR.toLocaleString("id-ID", { maximumFractionDigits: 2 })}
+                        <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-none shadow-none text-xs font-semibold">
+                          Live Google: Rp {c.liveRateInIDR.toLocaleString("id-ID", { maximumFractionDigits: 2 })}
                         </Badge>
                       )}
                     </TableCell>

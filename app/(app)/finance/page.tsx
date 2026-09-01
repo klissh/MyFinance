@@ -1,13 +1,11 @@
 "use client"
 
-import React, { useState } from "react"
+import React, { useState, useEffect } from "react"
 import {
   Breadcrumb,
   BreadcrumbItem,
   BreadcrumbList,
   BreadcrumbPage,
-  BreadcrumbLink,
-  BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb"
 import { Separator } from "@/components/ui/separator"
 import { SidebarTrigger } from "@/components/ui/sidebar"
@@ -17,7 +15,6 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  CardFooter,
 } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -54,25 +51,17 @@ import {
   CreditCard as CreditCardIcon,
   Plus,
   ArrowLeftRight,
+  ArrowUpRight,
+  ArrowDownLeft,
+  CheckCircle2,
 } from "lucide-react"
-
-interface FinancialAccount {
-  id: string
-  name: string
-  type: string
-  accountCategory: "bank" | "cash" | "ewallet"
-  balance: number
-  cardNumber: string
-  cardHolder: string
-  expiration: string
-  cardDesignType:
-    | "brand-dark"
-    | "transparent-gradient"
-    | "salmon-strip"
-    | "gray-dark"
-    | "brand-light"
-    | "gray-light"
-}
+import { Spinner } from "@/components/ui/spinner"
+import {
+  accountService,
+  transactionService,
+  authService,
+  FinancialAccountRecord,
+} from "@/lib/db"
 
 interface AccountMutation {
   id: string
@@ -84,61 +73,33 @@ interface AccountMutation {
 }
 
 export default function FinancePage() {
-  const [accounts, setAccounts] = useState<FinancialAccount[]>([
-    {
-      id: "ACC-01",
-      name: "Bank BCA",
-      type: "Rekening Utama",
-      accountCategory: "bank",
-      balance: 5200000,
-      cardNumber: "**** **** 8829",
-      cardHolder: "ABIMANYU",
-      expiration: "12/28",
-      cardDesignType: "brand-dark",
-    },
-    {
-      id: "ACC-02",
-      name: "Bank Mandiri",
-      type: "Tabungan Target",
-      accountCategory: "bank",
-      balance: 2000000,
-      cardNumber: "**** **** 1042",
-      cardHolder: "ABIMANYU",
-      expiration: "09/27",
-      cardDesignType: "transparent-gradient",
-    },
-    {
-      id: "ACC-03",
-      name: "Tunai / Cash",
-      type: "Dompet Fisik",
-      accountCategory: "cash",
-      balance: 750000,
-      cardNumber: "CASH - WALLET",
-      cardHolder: "ABIMANYU",
-      expiration: "N/A",
-      cardDesignType: "salmon-strip",
-    },
-    {
-      id: "ACC-04",
-      name: "GoPay",
-      type: "E-Wallet Digital",
-      accountCategory: "ewallet",
-      balance: 500000,
-      cardNumber: "0812 **** 9912",
-      cardHolder: "ABIMANYU",
-      expiration: "06/29",
-      cardDesignType: "gray-dark",
-    },
-  ])
+  const [accounts, setAccounts] = useState<FinancialAccountRecord[]>([])
+  const [mutations, setMutations] = useState<AccountMutation[]>([])
 
-  const mutations: AccountMutation[] = [
-    { id: "M-1", accountName: "Bank BCA", title: "Gaji Bulanan", type: "in", amount: 12500000, date: "15 Aug 2026" },
-    { id: "M-2", accountName: "Bank Mandiri", title: "Nabung Laptop Baru", type: "in", amount: 1000000, date: "16 Aug 2026" },
-    { id: "M-3", accountName: "GoPay", title: "Bayar Wifi Kamar Kos", type: "out", amount: 150000, date: "17 Aug 2026" },
-    { id: "M-4", accountName: "Tunai / Cash", title: "Makan Malam & Belanja", type: "out", amount: 85000, date: "18 Aug 2026" },
-    { id: "M-5", accountName: "Bank BCA", title: "Beli Token Listrik Kamar", type: "out", amount: 100000, date: "19 Aug 2026" },
-    { id: "M-6", accountName: "Bank BCA", title: "Transfer Ke GoPay", type: "transfer", amount: 200000, date: "19 Aug 2026" },
-  ]
+  useEffect(() => {
+    async function loadFinanceData() {
+      const [accs, txs] = await Promise.all([
+        accountService.getAll(),
+        transactionService.getAll(),
+      ])
+      setAccounts(accs)
+      const formattedMutations: AccountMutation[] = txs.map((t) => ({
+        id: t.id,
+        accountName: t.account,
+        title: t.title,
+        type: t.type,
+        amount: t.amount,
+        date: t.formattedDate,
+      }))
+      setMutations(formattedMutations)
+
+      const user = authService.getCurrentUser()
+      if (user) {
+        setNewAccCardHolder(user.fullName)
+      }
+    }
+    loadFinanceData()
+  }, [])
 
   const [selectedAccountFilter, setSelectedAccountFilter] = useState<string>("all")
 
@@ -147,63 +108,151 @@ export default function FinancePage() {
   const [newAccType, setNewAccType] = useState("Rekening Utama")
   const [newAccBalance, setNewAccBalance] = useState("")
   const [newAccNumber, setNewAccNumber] = useState("")
-  const [newAccCardHolder, setNewAccCardHolder] = useState("ABIMANYU")
-  const [newAccDesign, setNewAccDesign] = useState<FinancialAccount["cardDesignType"]>("brand-dark")
+  const [newAccCardHolder, setNewAccCardHolder] = useState("")
+  const [newAccDesign, setNewAccDesign] = useState<FinancialAccountRecord["cardDesignType"]>("brand-dark")
 
   const [isTransferDialogOpen, setIsTransferDialogOpen] = useState(false)
-  const [transferFrom, setTransferFrom] = useState("Bank BCA")
-  const [transferTo, setTransferTo] = useState("GoPay")
+  const [transferFrom, setTransferFrom] = useState("")
+  const [transferTo, setTransferTo] = useState("")
   const [transferAmount, setTransferAmount] = useState("")
 
-  const handleAddAccount = (e: React.FormEvent) => {
+  const [isSubmittingAcc, setIsSubmittingAcc] = useState(false)
+  const [isSubmittingTransfer, setIsSubmittingTransfer] = useState(false)
+
+  const formatNumberWithDots = (val: string): string => {
+    const digits = val.replace(/\D/g, "")
+    if (!digits) return ""
+    return Number(digits).toLocaleString("id-ID")
+  }
+
+  const parseFormattedNumber = (val: string): number => {
+    const digits = val.replace(/\D/g, "")
+    return parseFloat(digits) || 0
+  }
+
+  const [notification, setNotification] = useState<string | null>(null)
+
+  const showNotification = (msg: string) => {
+    setNotification(msg)
+    setTimeout(() => setNotification(null), 4000)
+  }
+
+  const handleAddAccount = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newAccName || !newAccBalance) return
 
-    const parsedBalance = parseFloat(newAccBalance)
+    const parsedBalance = parseFormattedNumber(newAccBalance)
     if (isNaN(parsedBalance)) return
 
-    const newAccountObj: FinancialAccount = {
-      id: `ACC-0${accounts.length + 1}`,
+    setIsSubmittingAcc(true)
+    const currentUser = authService.getCurrentUser()
+
+    const newAccountObj = await accountService.add({
       name: newAccName,
       type: newAccType,
       accountCategory: newAccType.toLowerCase().includes("bank") ? "bank" : newAccType.toLowerCase().includes("wallet") ? "ewallet" : "cash",
       balance: parsedBalance,
       cardNumber: newAccNumber || "**** **** 0000",
-      cardHolder: newAccCardHolder.toUpperCase() || "USER",
+      cardHolder: (newAccCardHolder || currentUser?.fullName || "USER").toUpperCase(),
       expiration: "12/29",
       cardDesignType: newAccDesign,
-    }
+    })
 
-    setAccounts([...accounts, newAccountObj])
+    const updatedAccs = await accountService.getAll()
+    setAccounts(updatedAccs)
+    showNotification(`Sumber dana "${newAccountObj.name}" berhasil dibuat!`)
+
     setNewAccName("")
     setNewAccBalance("")
     setNewAccNumber("")
+    setIsSubmittingAcc(false)
     setIsAddDialogOpen(false)
   }
 
-  const handleTransfer = (e: React.FormEvent) => {
+  const handleTransfer = async (e: React.FormEvent) => {
     e.preventDefault()
-    const amt = parseFloat(transferAmount)
+    const amt = parseFormattedNumber(transferAmount)
     if (isNaN(amt) || amt <= 0 || transferFrom === transferTo) return
 
-    setAccounts(
-      accounts.map((acc) => {
-        if (acc.name === transferFrom) {
-          return { ...acc, balance: Math.max(0, acc.balance - amt) }
-        }
-        if (acc.name === transferTo) {
-          return { ...acc, balance: acc.balance + amt }
-        }
-        return acc
-      })
+    setIsSubmittingTransfer(true)
+
+    const fromAcc = accounts.find((a) => a.name === transferFrom)
+    const toAcc = accounts.find((a) => a.name === transferTo)
+
+    if (!fromAcc || !toAcc) {
+      setIsSubmittingTransfer(false)
+      return
+    }
+
+    const newFromBalance = Math.max(0, fromAcc.balance - amt)
+    const newToBalance = toAcc.balance + amt
+
+    // 1. Update account balances in Supabase & local storage
+    await accountService.updateBalanceByName(transferFrom, newFromBalance)
+    await accountService.updateBalanceByName(transferTo, newToBalance)
+
+    const dateObj = new Date()
+    const isoDate = dateObj.toISOString().split("T")[0]
+    const formattedDate = dateObj.toLocaleDateString("id-ID", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    })
+
+    // 2. Record 2 transfer transactions (Outflow from source, Inflow to target)
+    await transactionService.add({
+      title: `Transfer ke ${transferTo}`,
+      category: "Transfer",
+      type: "out",
+      amount: amt,
+      account: transferFrom,
+      date: isoDate,
+      formattedDate: formattedDate,
+      notes: `Transfer saldo ke ${transferTo}`,
+    })
+
+    await transactionService.add({
+      title: `Transfer dari ${transferFrom}`,
+      category: "Transfer",
+      type: "in",
+      amount: amt,
+      account: transferTo,
+      date: isoDate,
+      formattedDate: formattedDate,
+      notes: `Transfer saldo masuk dari ${transferFrom}`,
+    })
+
+    // 3. Refresh accounts & mutations list
+    const [updatedAccs, updatedTxs] = await Promise.all([
+      accountService.getAll(),
+      transactionService.getAll(),
+    ])
+    setAccounts(updatedAccs)
+
+    const formattedMutations: AccountMutation[] = updatedTxs.map((t) => ({
+      id: t.id,
+      accountName: t.account,
+      title: t.title,
+      type: t.type,
+      amount: t.amount,
+      date: t.formattedDate,
+    }))
+    setMutations(formattedMutations)
+
+    showNotification(
+      `Transfer Rp ${amt.toLocaleString("id-ID")} dari "${transferFrom}" ke "${transferTo}" berhasil dicatat di mutasi!`
     )
 
     setTransferAmount("")
+    setIsSubmittingTransfer(false)
     setIsTransferDialogOpen(false)
   }
 
   const totalBalance = accounts.reduce((sum, a) => sum + a.balance, 0)
   const totalAccountsCount = accounts.length
+
+  const topAccount = accounts.length > 0 ? [...accounts].sort((a, b) => b.balance - a.balance)[0] : null
+  const topPct = (topAccount && totalBalance > 0) ? Math.round((topAccount.balance / totalBalance) * 100) : 0
 
   const filteredMutations = mutations.filter((m) => {
     if (selectedAccountFilter === "all") return true
@@ -223,47 +272,44 @@ export default function FinancePage() {
           <Breadcrumb>
             <BreadcrumbList>
               <BreadcrumbItem>
-                <BreadcrumbLink href="#">Sumber Dana & Target</BreadcrumbLink>
-              </BreadcrumbItem>
-              <BreadcrumbSeparator />
-              <BreadcrumbItem>
                 <BreadcrumbPage className="font-semibold text-base">
-                  Sumber Dana (Akun Keuangan)
+                  Sumber Dana & Target &gt; Sumber Dana (Akun Keuangan)
                 </BreadcrumbPage>
               </BreadcrumbItem>
             </BreadcrumbList>
           </Breadcrumb>
         </div>
 
-        {/* Quick Action Buttons */}
+        {/* Global Quick Action Buttons */}
         <div className="flex items-center gap-2">
           <Dialog open={isTransferDialogOpen} onOpenChange={setIsTransferDialogOpen}>
             <DialogTrigger asChild>
-              <Button size="sm" variant="outline" className="hidden sm:inline-flex shadow-none">
-                <ArrowLeftRight className="size-4 mr-1.5" /> Transfer Antar Akun
+              <Button size="sm" variant="outline" className="shadow-none text-xs border-border" disabled={accounts.length < 2}>
+                <ArrowLeftRight className="size-3.5 mr-1.5" /> Transfer Antar Akun
               </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-md shadow-none border">
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2 text-base font-bold">
                   <ArrowLeftRight className="size-5 text-primary" />
-                  Transfer Antar Akun Sumber Dana
+                  Transfer Antar Akun Keuangan
                 </DialogTitle>
                 <DialogDescription className="text-xs">
-                  Pindahkan saldo dari satu akun ke akun sumber dana lain.
+                  Pindahkan dana dari satu rekening/dompet ke rekening lainnya.
                 </DialogDescription>
               </DialogHeader>
+
               <form onSubmit={handleTransfer} className="space-y-4 pt-2">
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-muted-foreground">Dari Akun Asal</label>
+                  <label className="text-xs font-semibold text-muted-foreground">Dari Akun (Pengirim)</label>
                   <Select value={transferFrom} onValueChange={setTransferFrom}>
                     <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Pilih Akun Asal" />
+                      <SelectValue placeholder="Pilih Akun Pengirim" />
                     </SelectTrigger>
                     <SelectContent>
-                      {accounts.map((a) => (
-                        <SelectItem key={a.id} value={a.name}>
-                          {a.name} (Saldo: Rp {a.balance.toLocaleString("id-ID")})
+                      {accounts.map((acc) => (
+                        <SelectItem key={acc.id} value={acc.name}>
+                          {acc.name} (Saldo: Rp {acc.balance.toLocaleString("id-ID")})
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -271,15 +317,15 @@ export default function FinancePage() {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-muted-foreground">Ke Akun Tujuan</label>
+                  <label className="text-xs font-semibold text-muted-foreground">Ke Akun (Penerima)</label>
                   <Select value={transferTo} onValueChange={setTransferTo}>
                     <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Pilih Akun Tujuan" />
+                      <SelectValue placeholder="Pilih Akun Penerima" />
                     </SelectTrigger>
                     <SelectContent>
-                      {accounts.map((a) => (
-                        <SelectItem key={a.id} value={a.name}>
-                          {a.name} (Saldo: Rp {a.balance.toLocaleString("id-ID")})
+                      {accounts.map((acc) => (
+                        <SelectItem key={acc.id} value={acc.name}>
+                          {acc.name} (Saldo: Rp {acc.balance.toLocaleString("id-ID")})
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -289,10 +335,10 @@ export default function FinancePage() {
                 <div className="space-y-1">
                   <label className="text-xs font-semibold text-muted-foreground">Nominal Transfer (Rp)</label>
                   <Input
-                    type="number"
+                    type="text"
                     placeholder="0"
                     value={transferAmount}
-                    onChange={(e) => setTransferAmount(e.target.value)}
+                    onChange={(e) => setTransferAmount(formatNumberWithDots(e.target.value))}
                     required
                   />
                 </div>
@@ -303,8 +349,15 @@ export default function FinancePage() {
                       Batal
                     </Button>
                   </DialogClose>
-                  <Button type="submit" className="shadow-none text-xs">
-                    Proses Transfer
+                  <Button type="submit" disabled={isSubmittingTransfer} className="shadow-none text-xs">
+                    {isSubmittingTransfer ? (
+                      <div className="flex items-center gap-1.5">
+                        <Spinner className="size-3.5" />
+                        <span>Memproses...</span>
+                      </div>
+                    ) : (
+                      "Kirim Transfer"
+                    )}
                   </Button>
                 </DialogFooter>
               </form>
@@ -313,7 +366,7 @@ export default function FinancePage() {
 
           <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
             <DialogTrigger asChild>
-              <Button size="sm" className="shadow-none">
+              <Button size="sm" className="shadow-none text-xs">
                 <Plus className="size-4 mr-1.5" /> Tambah Sumber Dana
               </Button>
             </DialogTrigger>
@@ -359,36 +412,47 @@ export default function FinancePage() {
                     <label className="text-xs font-semibold text-muted-foreground">Desain Kartu</label>
                     <Select value={newAccDesign} onValueChange={(val) => setNewAccDesign(val as any)}>
                       <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Tema Kartu" />
+                        <SelectValue placeholder="Warna Kartu" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="brand-dark">Dark Premium</SelectItem>
-                        <SelectItem value="transparent-gradient">Gradient Hologram</SelectItem>
-                        <SelectItem value="salmon-strip">Salmon Strip</SelectItem>
-                        <SelectItem value="gray-dark">Classic Charcoal</SelectItem>
-                        <SelectItem value="brand-light">Light Silver</SelectItem>
+                        <SelectItem value="transparent-gradient">Gradient Glass</SelectItem>
+                        <SelectItem value="salmon-strip">Salmon Peach</SelectItem>
+                        <SelectItem value="gray-dark">Charcoal Dark</SelectItem>
+                        <SelectItem value="brand-light">Classic Light</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-muted-foreground">Saldo Awal (Rp)</label>
-                  <Input
-                    type="number"
-                    placeholder="0"
-                    value={newAccBalance}
-                    onChange={(e) => setNewAccBalance(e.target.value)}
-                    required
-                  />
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-muted-foreground">Saldo Awal (Rp)</label>
+                    <Input
+                      type="text"
+                      placeholder="0"
+                      value={newAccBalance}
+                      onChange={(e) => setNewAccBalance(formatNumberWithDots(e.target.value))}
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-muted-foreground">Nomor Kartu/Akun</label>
+                    <Input
+                      placeholder="**** **** 8829"
+                      value={newAccNumber}
+                      onChange={(e) => setNewAccNumber(e.target.value)}
+                    />
+                  </div>
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-muted-foreground">Nomor Kartu / Rekening (Opsional)</label>
+                  <label className="text-xs font-semibold text-muted-foreground">Nama Pemilik Kartu</label>
                   <Input
-                    placeholder="**** **** 1234"
-                    value={newAccNumber}
-                    onChange={(e) => setNewAccNumber(e.target.value)}
+                    placeholder="NAMA LENGKAP"
+                    value={newAccCardHolder}
+                    onChange={(e) => setNewAccCardHolder(e.target.value)}
                   />
                 </div>
 
@@ -398,8 +462,15 @@ export default function FinancePage() {
                       Batal
                     </Button>
                   </DialogClose>
-                  <Button type="submit" className="shadow-none text-xs">
-                    Simpan Akun
+                  <Button type="submit" disabled={isSubmittingAcc} className="shadow-none text-xs">
+                    {isSubmittingAcc ? (
+                      <div className="flex items-center gap-1.5">
+                        <Spinner className="size-3.5" />
+                        <span>Menyimpan...</span>
+                      </div>
+                    ) : (
+                      "Simpan Akun"
+                    )}
                   </Button>
                 </DialogFooter>
               </form>
@@ -410,15 +481,23 @@ export default function FinancePage() {
 
       {/* Main Content */}
       <div className="flex flex-1 flex-col gap-6 p-4 md:p-6 bg-background min-h-screen">
-        {/* Metric Summary Cards */}
+        {/* Toast Notification Banner */}
+        {notification && (
+          <div className="flex items-center gap-3 p-4 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-800 dark:text-emerald-300 text-xs font-medium animate-in fade-in slide-in-from-top-2">
+            <CheckCircle2 className="size-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <span>{notification}</span>
+          </div>
+        )}
+
+        {/* 1. Metric Summary Cards */}
         <div className="grid gap-4 md:grid-cols-3">
           <Card className="shadow-none border border-border p-5 gap-3 bg-card">
             <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
+              <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
                 Total Saldo Keseluruhan
               </CardTitle>
               <div className="p-2 rounded-xl bg-muted/60 text-foreground">
-                <Wallet className="size-5" />
+                <Wallet className="size-4" />
               </div>
             </CardHeader>
             <CardContent className="p-0 space-y-1">
@@ -431,11 +510,11 @@ export default function FinancePage() {
 
           <Card className="shadow-none border border-border p-5 gap-3 bg-card">
             <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
+              <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
                 Jumlah Akun Terdaftar
               </CardTitle>
               <div className="p-2 rounded-xl bg-muted/60 text-foreground">
-                <Building2 className="size-5" />
+                <Building2 className="size-4" />
               </div>
             </CardHeader>
             <CardContent className="p-0 space-y-1">
@@ -448,18 +527,20 @@ export default function FinancePage() {
 
           <Card className="shadow-none border border-border p-5 gap-3 bg-card">
             <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
+              <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
                 Alokasi Saldo Terbesar
               </CardTitle>
               <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600">
-                <CreditCardIcon className="size-5" />
+                <CreditCardIcon className="size-4" />
               </div>
             </CardHeader>
             <CardContent className="p-0 space-y-1">
               <div className="text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">
-                Bank BCA (61.5%)
+                {topAccount ? `${topAccount.name} (${topPct}%)` : "Belum ada"}
               </div>
-              <p className="text-xs text-muted-foreground">Rp 5.200.000 saldo aktif</p>
+              <p className="text-xs text-muted-foreground">
+                {topAccount ? `Rp ${topAccount.balance.toLocaleString("id-ID")} saldo aktif` : "Belum ada akun"}
+              </p>
             </CardContent>
           </Card>
         </div>
@@ -476,121 +557,151 @@ export default function FinancePage() {
           </div>
 
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            {accounts.map((acc) => (
-              <Card key={acc.id} className="border border-border shadow-none p-4 flex flex-col justify-between gap-4 bg-card">
-                <div className="flex justify-center w-full py-1">
-                  <CreditCard
-                    company={acc.name}
-                    cardNumber={acc.cardNumber}
-                    cardHolder={acc.cardHolder}
-                    cardExpiration={acc.expiration}
-                    type={acc.cardDesignType}
-                    width={280}
-                  />
+            {accounts.length === 0 ? (
+              <div className="col-span-full border border-border rounded-2xl p-8 text-center bg-card space-y-3">
+                <Wallet className="size-10 text-muted-foreground/50 mx-auto" />
+                <div className="space-y-1">
+                  <h3 className="text-sm font-bold text-foreground">Belum Ada Sumber Dana</h3>
+                  <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+                    Daftarkan rekening bank, dompet digital, atau uang tunai Anda untuk mengelola keuangan.
+                  </p>
                 </div>
+                <Button onClick={() => setIsAddDialogOpen(true)} size="sm" className="text-xs shadow-none">
+                  <Plus className="size-3.5 mr-1.5" /> Tambah Sumber Dana Baru
+                </Button>
+              </div>
+            ) : (
+              accounts.map((acc) => (
+                <Card key={acc.id} className="border border-border shadow-none p-4 flex flex-col justify-between gap-4 bg-card">
+                  <div className="w-full flex justify-center">
+                    <CreditCard
+                      cardHolder={acc.cardHolder}
+                      cardNumber={acc.cardNumber}
+                      cardExpiration={acc.expiration}
+                      type={acc.cardDesignType}
+                      company={acc.name}
+                    />
+                  </div>
 
-                <div className="space-y-3 pt-2 border-t border-border">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-sm font-bold">{acc.name}</div>
-                      <Badge variant="outline" className="text-[10px] font-normal py-0 mt-0.5 border-border">
+                  <div className="space-y-1.5 pt-1">
+                    <div className="flex items-center justify-between">
+                      <div className="font-bold text-sm text-foreground">{acc.name}</div>
+                      <div className="text-[11px] text-muted-foreground">Saldo Aktif</div>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <Badge variant="outline" className="text-[10px] font-normal border-border">
                         {acc.type}
                       </Badge>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-xs text-muted-foreground">Saldo Aktif</div>
-                      <div className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
+                      <div className="text-sm font-extrabold text-emerald-600 dark:text-emerald-400">
                         Rp {acc.balance.toLocaleString("id-ID")}
                       </div>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm" className="w-full text-xs shadow-none h-8 border-border" asChild>
-                      <a href="/transaksi">Mutasi Akun</a>
-                    </Button>
-                  </div>
-                </div>
-              </Card>
-            ))}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full text-xs text-muted-foreground hover:text-foreground h-8 border border-border/50"
+                    onClick={() => {
+                      setSelectedAccountFilter(acc.name)
+                      showNotification(`Filter mutasi disesuaikan ke "${acc.name}"`)
+                      document.getElementById("mutasi-section")?.scrollIntoView({ behavior: "smooth" })
+                    }}
+                  >
+                    Mutasi Akun
+                  </Button>
+                </Card>
+              ))
+            )}
           </div>
         </div>
 
-        {/* 3. Mutations History Table Per Account */}
-        <Card className="border border-border shadow-none p-5 gap-4 bg-card">
-          <CardHeader className="p-0 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        {/* 3. Account Mutations Section */}
+        <Card id="mutasi-section" className="border border-border shadow-none p-5 gap-4 bg-card">
+          <CardHeader className="p-0 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border pb-4">
             <div>
               <CardTitle className="text-base font-semibold flex items-center gap-2">
                 <ArrowLeftRight className="size-5 text-primary" />
                 Riwayat Mutasi & Arus Kas Sumber Dana
               </CardTitle>
-              <CardDescription className="text-sm">
+              <CardDescription className="text-xs">
                 Aktivitas pemasukan, pengeluaran, dan transfer per akun
               </CardDescription>
             </div>
 
-            <div className="w-full sm:w-48 shrink-0">
-              <Select value={selectedAccountFilter} onValueChange={setSelectedAccountFilter}>
-                <SelectTrigger className="w-full text-xs">
-                  <SelectValue placeholder="Pilih Sumber Dana" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Semua Sumber Dana</SelectItem>
-                  {accounts.map((a) => (
-                    <SelectItem key={a.id} value={a.name}>
-                      {a.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <Select value={selectedAccountFilter} onValueChange={setSelectedAccountFilter}>
+              <SelectTrigger className="w-[180px] h-9 text-xs border-border">
+                <SelectValue placeholder="Pilih Akun" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua Sumber Dana</SelectItem>
+                {accounts.map((acc) => (
+                  <SelectItem key={acc.id} value={acc.name}>
+                    {acc.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </CardHeader>
 
           <CardContent className="p-0 -mx-5">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Tanggal</TableHead>
                   <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Sumber Dana</TableHead>
-                  <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Keterangan Transaksi</TableHead>
+                  <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Keterangan Mutasi</TableHead>
                   <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Tipe</TableHead>
-                  <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground text-right">Jumlah</TableHead>
+                  <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Tanggal</TableHead>
+                  <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground text-right">Nominal</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredMutations.map((m) => (
-                  <TableRow key={m.id}>
-                    <TableCell className="px-5 py-3.5 text-xs text-muted-foreground font-medium">
-                      {m.date}
-                    </TableCell>
-                    <TableCell className="px-5 py-3.5 text-sm font-semibold">
-                      {m.accountName}
-                    </TableCell>
-                    <TableCell className="px-5 py-3.5 font-medium text-sm">
-                      {m.title}
-                    </TableCell>
-                    <TableCell className="px-5 py-3.5">
-                      {m.type === "in" ? (
-                        <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-none shadow-none text-xs font-semibold">
-                          Uang Masuk
-                        </Badge>
-                      ) : m.type === "out" ? (
-                        <Badge className="bg-rose-500/15 text-rose-600 dark:text-rose-400 border-none shadow-none text-xs font-semibold">
-                          Uang Keluar
-                        </Badge>
-                      ) : (
-                        <Badge className="bg-primary/10 text-primary border-none shadow-none text-xs font-semibold">
-                          Transfer
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className={`px-5 py-3.5 text-right font-bold text-sm ${
-                      m.type === 'in' ? 'text-emerald-600 dark:text-emerald-400' : 'text-foreground'
-                    }`}>
-                      {m.type === 'in' ? '+' : m.type === 'out' ? '-' : ''}Rp {m.amount.toLocaleString("id-ID")}
+                {filteredMutations.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center py-8 text-xs text-muted-foreground">
+                      Belum ada mutasi tercatat untuk sumber dana ini.
                     </TableCell>
                   </TableRow>
-                ))}
+                ) : (
+                  filteredMutations.map((m) => (
+                    <TableRow key={m.id}>
+                      <TableCell className="px-5 py-3.5 font-bold text-xs">
+                        {m.accountName}
+                      </TableCell>
+                      <TableCell className="px-5 py-3.5 text-xs text-foreground font-medium">
+                        {m.title}
+                      </TableCell>
+                      <TableCell className="px-5 py-3.5">
+                        <Badge
+                          variant="outline"
+                          className={`text-[10px] font-semibold border-border ${
+                            m.type === "in"
+                              ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/30"
+                              : m.type === "out"
+                              ? "bg-rose-500/10 text-rose-600 border-rose-500/30"
+                              : "bg-amber-500/10 text-amber-600 border-amber-500/30"
+                          }`}
+                        >
+                          {m.type === "in" ? "Pemasukan" : m.type === "out" ? "Pengeluaran" : "Transfer"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="px-5 py-3.5 text-xs text-muted-foreground">
+                        {m.date}
+                      </TableCell>
+                      <TableCell
+                        className={`px-5 py-3.5 text-right font-extrabold text-xs ${
+                          m.type === "in"
+                            ? "text-emerald-600 dark:text-emerald-400"
+                            : m.type === "out"
+                            ? "text-rose-600 dark:text-rose-400"
+                            : "text-foreground"
+                        }`}
+                      >
+                        {m.type === "in" ? "+" : m.type === "out" ? "-" : ""}Rp {m.amount.toLocaleString("id-ID")}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
               </TableBody>
             </Table>
           </CardContent>

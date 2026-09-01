@@ -7,96 +7,96 @@ import { MastercardIcon, MastercardIconWhite, PaypassIcon } from "./icons";
 const styles = sortCx({
     // Normal
     transparent: {
-        root: "bg-black/10 bg-linear-to-br from-white/30 to-transparent backdrop-blur-[6px] before:pointer-events-none before:absolute before:inset-0 before:z-1 before:rounded-[inherit] before:mask-linear-135 before:mask-linear-to-white/20 before:ring-1 before:ring-white/30 before:ring-inset",
-        company: "text-white",
-        footerText: "text-white",
+        root: "bg-zinc-950 bg-gradient-to-br from-zinc-800 to-zinc-950 border border-zinc-700/50 shadow-md",
+        company: "text-white font-bold",
+        footerText: "text-zinc-200",
         paypassIcon: "text-white",
         cardTypeRoot: "bg-white/10",
     },
     "transparent-gradient": {
-        root: "bg-black/10 bg-linear-to-br from-white/30 to-transparent backdrop-blur-[6px] before:pointer-events-none before:absolute before:inset-0 before:z-1 before:rounded-[inherit] before:mask-linear-135 before:mask-linear-to-white/20 before:ring-1 before:ring-white/30 before:ring-inset",
-        company: "text-white",
+        root: "bg-slate-950 bg-gradient-to-br from-slate-900 via-purple-950 to-indigo-950 border border-indigo-500/30 shadow-md",
+        company: "text-white font-bold",
         footerText: "text-white",
         paypassIcon: "text-white",
         cardTypeRoot: "bg-white/10",
     },
     "brand-dark": {
-        root: "bg-linear-to-tr from-brand-900 to-brand-700 before:pointer-events-none before:absolute before:inset-0 before:z-1 before:rounded-[inherit] before:mask-linear-135 before:mask-linear-to-white/20 before:ring-1 before:ring-white/30 before:ring-inset",
-        company: "text-white",
-        footerText: "text-white",
+        root: "bg-zinc-950 bg-gradient-to-tr from-zinc-950 via-slate-900 to-zinc-900 border border-zinc-800 shadow-md text-white",
+        company: "text-white font-bold",
+        footerText: "text-zinc-200",
         paypassIcon: "text-white",
         cardTypeRoot: "bg-white/10",
     },
     "brand-light": {
-        root: "bg-brand-100 before:pointer-events-none before:absolute before:inset-0 before:z-1 before:rounded-[inherit] before:mask-linear-135 before:mask-linear-to-white/20 before:ring-1 before:ring-black/10 before:ring-inset",
-        company: "text-neutral-700",
-        footerText: "text-neutral-700",
-        paypassIcon: "text-white",
-        cardTypeRoot: "bg-white",
+        root: "bg-slate-100 bg-gradient-to-tr from-slate-100 to-zinc-200 border border-slate-300 shadow-md text-slate-900",
+        company: "text-slate-900 font-bold",
+        footerText: "text-slate-800 font-semibold",
+        paypassIcon: "text-slate-700",
+        cardTypeRoot: "bg-slate-900/10",
     },
     "gray-dark": {
-        root: "bg-linear-to-tr from-neutral-900 to-neutral-700 before:pointer-events-none before:absolute before:inset-0 before:z-1 before:rounded-[inherit] before:mask-linear-135 before:mask-linear-to-white/20 before:ring-1 before:ring-white/30 before:ring-inset",
-        company: "text-white",
-        footerText: "text-white",
+        root: "bg-neutral-950 bg-gradient-to-tr from-neutral-950 via-neutral-900 to-neutral-800 border border-neutral-700/50 shadow-md text-white",
+        company: "text-white font-bold",
+        footerText: "text-neutral-200",
         paypassIcon: "text-white",
         cardTypeRoot: "bg-white/10",
     },
     "gray-light": {
-        root: "bg-neutral-100 before:pointer-events-none before:absolute before:inset-0 before:z-1 before:rounded-[inherit] before:mask-linear-135 before:mask-linear-to-white/20 before:ring-1 before:ring-black/10 before:ring-inset",
-        company: "text-neutral-700",
-        footerText: "text-neutral-700",
-        paypassIcon: "text-neutral-400",
-        cardTypeRoot: "bg-white",
+        root: "bg-neutral-100 bg-gradient-to-tr from-neutral-100 to-neutral-200 border border-neutral-300 shadow-md text-neutral-900",
+        company: "text-neutral-900 font-bold",
+        footerText: "text-neutral-800 font-semibold",
+        paypassIcon: "text-neutral-600",
+        cardTypeRoot: "bg-neutral-900/10",
     },
 
     // Strip
     "transparent-strip": {
-        root: "bg-linear-to-br from-white/30 to-transparent backdrop-blur-[6px] before:pointer-events-none before:absolute before:inset-0 before:z-1 before:rounded-[inherit] before:mask-linear-135 before:mask-linear-to-white/20 before:ring-1 before:ring-white/30 before:ring-inset",
-        company: "text-white",
+        root: "bg-zinc-900 bg-gradient-to-br from-zinc-800 to-zinc-950 border border-zinc-700/50 shadow-md text-white",
+        company: "text-white font-bold",
         footerText: "text-white",
         paypassIcon: "text-white",
         cardTypeRoot: "bg-white/10",
     },
     "gray-strip": {
-        root: "bg-neutral-100 before:pointer-events-none before:absolute before:inset-0 before:z-1 before:rounded-[inherit] before:mask-linear-135 before:mask-linear-to-white/20 before:ring-1 before:ring-white/30 before:ring-inset",
-        company: "text-neutral-700",
-        footerText: "text-white",
-        paypassIcon: "text-neutral-400",
-        cardTypeRoot: "bg-white/10",
+        root: "bg-neutral-100 border border-neutral-300 shadow-md text-neutral-900",
+        company: "text-neutral-900 font-bold",
+        footerText: "text-neutral-800",
+        paypassIcon: "text-neutral-600",
+        cardTypeRoot: "bg-neutral-900/10",
     },
     "gradient-strip": {
-        root: "bg-linear-to-b from-[#A5C0EE] to-[#FBC5EC] before:pointer-events-none before:absolute before:inset-0 before:z-1 before:rounded-[inherit] before:mask-linear-135 before:mask-linear-to-white/20 before:ring-1 before:ring-white/30 before:ring-inset",
-        company: "text-white",
+        root: "bg-slate-950 bg-gradient-to-b from-[#1e293b] to-[#0f172a] border border-slate-700 shadow-md text-white",
+        company: "text-white font-bold",
         footerText: "text-white",
         paypassIcon: "text-white",
         cardTypeRoot: "bg-white/10",
     },
     "salmon-strip": {
-        root: "bg-[#F4D9D0] before:pointer-events-none before:absolute before:inset-0 before:z-1 before:rounded-[inherit] before:mask-linear-135 before:mask-linear-to-white/20 before:ring-1 before:ring-white/30 before:ring-inset",
-        company: "text-neutral-700",
-        footerText: "text-white",
+        root: "bg-rose-950 bg-gradient-to-tr from-rose-950 via-pink-900 to-slate-900 border border-rose-800/40 shadow-md text-white",
+        company: "text-white font-bold",
+        footerText: "text-rose-100",
         paypassIcon: "text-white",
         cardTypeRoot: "bg-white/10",
     },
 
     // Vertical strip
     "gray-strip-vertical": {
-        root: "bg-linear-to-br from-white/30 to-transparent before:pointer-events-none before:absolute before:inset-0 before:z-1 before:rounded-[inherit] before:mask-linear-135 before:mask-linear-to-white/20 before:ring-1 before:ring-white/30 before:ring-inset",
-        company: "text-white",
+        root: "bg-zinc-950 bg-gradient-to-br from-zinc-900 to-zinc-950 border border-zinc-800 shadow-md text-white",
+        company: "text-white font-bold",
         footerText: "text-white",
-        paypassIcon: "text-neutral-400",
+        paypassIcon: "text-zinc-400",
         cardTypeRoot: "bg-white/10",
     },
     "gradient-strip-vertical": {
-        root: "bg-linear-to-b from-[#FBC2EB] to-[#A18CD1] before:pointer-events-none before:absolute before:inset-0 before:z-1 before:rounded-[inherit] before:mask-linear-135 before:mask-linear-to-white/20 before:ring-1 before:ring-white/30 before:ring-inset",
-        company: "text-white",
+        root: "bg-purple-950 bg-gradient-to-b from-purple-950 to-indigo-950 border border-purple-800/40 shadow-md text-white",
+        company: "text-white font-bold",
         footerText: "text-white",
         paypassIcon: "text-white",
         cardTypeRoot: "bg-white/10",
     },
     "salmon-strip-vertical": {
-        root: "bg-[#F4D9D0] before:pointer-events-none before:absolute before:inset-0 before:z-1 before:rounded-[inherit] before:mask-linear-135 before:mask-linear-to-white/20 before:ring-1 before:ring-white/30 before:ring-inset",
-        company: "text-white",
+        root: "bg-rose-950 bg-gradient-to-b from-rose-950 to-slate-950 border border-rose-800/40 shadow-md text-white",
+        company: "text-white font-bold",
         footerText: "text-white",
         paypassIcon: "text-white",
         cardTypeRoot: "bg-white/10",
@@ -122,17 +122,14 @@ interface CreditCardProps {
 }
 
 const calculateScale = (desiredWidth: number, originalWidth: number, originalHeight: number) => {
-    // Calculate the scale factor
     const scale = desiredWidth / originalWidth;
-
-    // Calculate the new dimensions
     const scaledWidth = originalWidth * scale;
     const scaledHeight = originalHeight * scale;
 
     return {
-        scale: scale.toFixed(4), // Scale rounded to 4 decimal places
-        scaledWidth: scaledWidth.toFixed(2), // Width rounded to 2 decimal places
-        scaledHeight: scaledHeight.toFixed(2), // Height rounded to 2 decimal places
+        scale: scale.toFixed(4),
+        scaledWidth: scaledWidth.toFixed(2),
+        scaledHeight: scaledHeight.toFixed(2),
     };
 };
 
@@ -159,6 +156,8 @@ export const CreditCard = ({
         return calculateScale(width, originalWidth, originalHeight);
     }, [width]);
 
+    const activeStyle = styles[type] || styles["brand-dark"];
+
     return (
         <div
             style={{
@@ -173,61 +172,58 @@ export const CreditCard = ({
                     width: `${originalWidth}px`,
                     height: `${originalHeight}px`,
                 }}
-                className={cx("absolute top-0 left-0 flex origin-top-left flex-col justify-between overflow-hidden rounded-2xl p-4", styles[type].root)}
+                className={cx("absolute top-0 left-0 flex origin-top-left flex-col justify-between overflow-hidden rounded-2xl p-4", activeStyle.root)}
             >
                 {/* Horizontal strip */}
                 {STRIP_TYPES.includes(type as (typeof STRIP_TYPES)[number]) && (
-                    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-0 h-1/2 bg-neutral-800"></div>
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-0 h-1/2 bg-neutral-900/60"></div>
                 )}
                 {/* Vertical stripe */}
                 {VERTICAL_STRIP_TYPES.includes(type as (typeof VERTICAL_STRIP_TYPES)[number]) && (
-                    <div className="pointer-events-none absolute inset-y-0 right-22 left-0 z-0 bg-neutral-800"></div>
+                    <div className="pointer-events-none absolute inset-y-0 right-22 left-0 z-0 bg-neutral-900/60"></div>
                 )}
                 {/* Gradient diffusor */}
                 {type === "transparent-gradient" && (
-                    <div className="absolute -top-4 -left-4 grid grid-cols-2 blur-3xl">
-                        <div className="size-20 rounded-tl-full bg-pink-500 opacity-30 mix-blend-normal" />
+                    <div className="absolute -top-4 -left-4 grid grid-cols-2 blur-3xl pointer-events-none">
+                        <div className="size-20 rounded-tl-full bg-pink-500 opacity-40 mix-blend-normal" />
                         <div className="size-20 rounded-tr-full bg-orange-500 opacity-50 mix-blend-normal" />
-                        <div className="size-20 rounded-bl-full bg-blue-500 opacity-30 mix-blend-normal" />
-                        <div className="bg-green-500 size-20 rounded-br-full opacity-30 mix-blend-normal" />
+                        <div className="size-20 rounded-bl-full bg-blue-500 opacity-40 mix-blend-normal" />
+                        <div className="bg-green-500 size-20 rounded-br-full opacity-40 mix-blend-normal" />
                     </div>
                 )}
 
-                <div className="relative flex items-start justify-between px-1 pt-1">
-                    <div className={cx("text-md leading-[normal] font-semibold", styles[type].company)}>{company}</div>
-
-                    <PaypassIcon className={styles[type].paypassIcon} />
+                <div className="relative flex items-start justify-between px-1 pt-1 z-10">
+                    <div className={cx("text-md leading-[normal] font-semibold", activeStyle.company)}>{company}</div>
+                    <PaypassIcon className={activeStyle.paypassIcon} />
                 </div>
 
-                <div className="relative flex items-end justify-between gap-3">
+                <div className="relative flex items-end justify-between gap-3 z-10">
                     <div className="flex min-w-0 flex-col gap-2">
                         <div className="flex items-end gap-1">
                             <p
                                 style={{
                                     wordBreak: "break-word",
                                 }}
-                                className={cx("text-xs leading-snug font-semibold tracking-[0.6px] uppercase", styles[type].footerText)}
+                                className={cx("text-xs leading-snug font-semibold tracking-[0.6px] uppercase", activeStyle.footerText)}
                             >
                                 {cardHolder}
                             </p>
                             <p
                                 className={cx(
                                     "ml-auto text-right text-xs leading-[normal] font-semibold tracking-[0.6px] tabular-nums",
-                                    styles[type].footerText,
+                                    activeStyle.footerText,
                                 )}
                             >
                                 {cardExpiration}
                             </p>
                         </div>
-                        <div className={cx("text-md leading-[normal] font-semibold tracking-[1px] tabular-nums", styles[type].footerText)}>
+                        <div className={cx("text-md leading-[normal] font-semibold tracking-[1px] tabular-nums", activeStyle.footerText)}>
                             {cardNumber}
-
-                            {/* This is just a placeholder to always keep the space for card number even if there's no card number yet. */}
                             <span className="pointer-events-none invisible inline-block w-0 max-w-0 opacity-0">1</span>
                         </div>
                     </div>
 
-                    <div className={cx("flex h-8 w-11.5 shrink-0 items-center justify-center rounded", styles[type].cardTypeRoot)}>
+                    <div className={cx("flex h-8 w-11.5 shrink-0 items-center justify-center rounded", activeStyle.cardTypeRoot)}>
                         {CARD_WITH_COLOR_LOGO.includes(type as (typeof CARD_WITH_COLOR_LOGO)[number]) ? <MastercardIcon /> : <MastercardIconWhite />}
                     </div>
                 </div>

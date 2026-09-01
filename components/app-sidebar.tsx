@@ -5,7 +5,6 @@ import {
   LayoutDashboardIcon,
   ArrowLeftRightIcon,
   WalletIcon,
-  PiggyBankIcon,
   DollarSignIcon,
   CalendarIcon,
   UsersIcon,
@@ -23,8 +22,9 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
+import { authService, kamarService, UserSession, KamarRoomRecord } from "@/lib/db"
 
-// Menu personal - flat, tidak ada sub-item, langsung navigasi
+// Menu personal - flat, langsung navigasi
 const navMain = [
   {
     title: "Dashboard",
@@ -58,33 +58,62 @@ const navMain = [
   },
 ]
 
-// Menu kamar - dinamis, sebaiknya di-fetch dari data user (contoh statis dulu)
-// TODO: ganti dengan data asli dari API/database (kamar yang diikuti user)
-const navKamar = [
-  {
-    title: "Kamar",
-    url: "#",
-    icon: <UsersIcon />,
-    isActive: true,
-    items: [
-      { title: "Kamar Keluarga", url: "/kamar/keluarga" },
-      { title: "Kamar Kos Bareng", url: "/kamar/kos" },
-    ],
-  },
-]
-
-// Data user - sebaiknya diganti dengan session/auth data asli
-const user = {
-  name: "shadcn",
-  email: "m@example.com",
-  avatar: "/avatars/shadcn.jpg",
-}
-
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const [currentUser, setCurrentUser] = React.useState<UserSession>({
+    id: "usr_default",
+    fullName: "Pengguna",
+    email: "user@example.com",
+  })
+  const [activeRoom, setActiveRoom] = React.useState<KamarRoomRecord | null>(null)
+
+  const checkUserDataAndRoom = React.useCallback(() => {
+    const user = authService.getCurrentUser()
+    if (user) {
+      setCurrentUser(user)
+    }
+    const room = kamarService.getUserRoom()
+    setActiveRoom(room)
+  }, [])
+
+  React.useEffect(() => {
+    checkUserDataAndRoom()
+
+    const handleRoomUpdate = () => {
+      checkUserDataAndRoom()
+    }
+
+    window.addEventListener("room-updated", handleRoomUpdate)
+    return () => {
+      window.removeEventListener("room-updated", handleRoomUpdate)
+    }
+  }, [checkUserDataAndRoom])
+
+  const userData = {
+    name: currentUser.fullName,
+    email: currentUser.email,
+    avatar: currentUser.avatarUrl || "/avatars/shadcn.jpg",
+  }
+
+  // Build Kamar Kos menu conditionally
+  const navKamar = activeRoom
+    ? [
+        {
+          title: activeRoom.name,
+          url: "/kamar/kos",
+          icon: <UsersIcon />,
+          isActive: true,
+          items: [
+            { title: "Transaksi & Split Bill", url: "/kamar/kos" },
+            { title: "Kebutuhan Bulanan", url: "/kamar/kos/kebutuhan" },
+            { title: "Anggota & Tagihan Saya", url: "/kamar/kos/anggota" },
+          ],
+        },
+      ]
+    : []
+
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
-        {/* Bisa diganti dengan nama app/workspace switcher kalau perlu */}
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild>
@@ -94,7 +123,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 </div>
                 <div className="grid flex-1 text-left text-sm leading-tight">
                   <span className="truncate font-medium">MyFinance</span>
-                  <span className="truncate text-xs">Personal & Kamar</span>
+                  <span className="truncate text-xs text-muted-foreground">Personal & Kos</span>
                 </div>
               </a>
             </SidebarMenuButton>
@@ -103,9 +132,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarHeader>
       <SidebarContent>
         <NavMain label="Personal" items={navMain} />
-        <NavMain label="Kamar" items={navKamar} />
-        {/* Aksi cepat untuk buat/gabung kamar baru */}
-        <SidebarMenu className="px-2">
+        
+        {/* Render menu Kamar Kos HANYA jika pengguna telah memiliki/bergabung ke kamar kos */}
+        {activeRoom && <NavMain label="Kamar Kos Bersama" items={navKamar} />}
+
+        {/* Aksi cepat untuk buat/gabung kamar baru (selalu tersedia) */}
+        <SidebarMenu className="px-2 pt-2">
           <SidebarMenuItem>
             <SidebarMenuButton asChild tooltip="Buat atau Gabung Kamar">
               <a href="/kamar/baru">
@@ -117,7 +149,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         </SidebarMenu>
       </SidebarContent>
       <SidebarFooter>
-        <NavUser user={user} />
+        <NavUser user={userData} />
       </SidebarFooter>
     </Sidebar>
   )
