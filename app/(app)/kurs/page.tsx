@@ -95,7 +95,6 @@ export default function KursPage() {
   const [providerMode, setProviderMode] = useState<ProviderMode>("live") // "live" | "manual"
   const [isLoadingApi, setIsLoadingApi] = useState<boolean>(false)
   const [isLoadingChart, setIsLoadingChart] = useState<boolean>(false)
-  const [lastApiDate, setLastApiDate] = useState<string>(new Date().toISOString().split("T")[0])
   const [lastChangeTime, setLastChangeTime] = useState<string>("")
   const [hasRateChangedRecently, setHasRateChangedRecently] = useState<boolean>(false)
   const [apiError, setApiError] = useState<string | null>(null)
@@ -171,11 +170,10 @@ export default function KursPage() {
 
           return next
         })
-        setLastApiDate(new Date().toISOString().split("T")[0])
       } else {
         throw new Error("Respon data kurs tidak lengkap")
       }
-    } catch (err: any) {
+    } catch (err) {
       console.warn("Live rates fetch error:", err)
       setApiError("Koneksi API Realtime lambat. Menggunakan data kurs terverifikasi.")
     } finally {
@@ -247,6 +245,8 @@ export default function KursPage() {
 
   // Initial Fetch & Background Check (Only updates UI when prices actually fluctuate)
   useEffect(() => {
+    // Fetch awal + polling: sinkronisasi dengan sumber eksternal (API kurs), disengaja.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchLiveRates(providerMode, false)
 
     // Check market periodically in background, but only updates state if price changed
@@ -268,12 +268,15 @@ export default function KursPage() {
 
   // Fetch real historical chart data whenever controls change
   useEffect(() => {
+    // Sinkronisasi grafik dengan sumber eksternal (API historis), disengaja.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchHistoricalChart(chartBaseCurrency, chartCompareCurrency, chartTimeRange)
   }, [chartBaseCurrency, chartCompareCurrency, chartTimeRange, fetchHistoricalChart])
 
-  // Sync chart base currency with converter selection
+  // Samakan mata uang dasar grafik dengan pilihan di kalkulator konversi
   useEffect(() => {
     if (fromCurrency !== "IDR") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setChartBaseCurrency(fromCurrency)
     }
   }, [fromCurrency])
@@ -346,7 +349,7 @@ export default function KursPage() {
   // Calculate Y-Axis Min and Max for Single Pair Zoom Mode
   const { yMin, yMax } = useMemo(() => {
     if (isComparisonMode || realChartData.length === 0) return { yMin: "auto", yMax: "auto" }
-    const vals = realChartData.map((d: any) => d.rate).filter(Boolean)
+    const vals = realChartData.map((d) => d.rate).filter((v): v is number => typeof v === "number")
     if (vals.length === 0) return { yMin: "auto", yMax: "auto" }
     const min = Math.min(...vals)
     const max = Math.max(...vals)

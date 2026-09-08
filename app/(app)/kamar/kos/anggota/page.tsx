@@ -108,6 +108,18 @@ export default function AnggotaKosPage() {
     loadData()
   }, [])
 
+  // Posisi utang-piutang bersih per anggota, diturunkan dari matriks utang.
+  const memberNet = (name: string): { net: number; status: KamarMemberRecord["status"] } => {
+    let net = 0
+    for (const d of debtMatrix) {
+      if (d.to === name) net += d.amount // orang lain berutang ke dia
+      if (d.from === name) net -= d.amount // dia berutang ke orang lain
+    }
+    const status: KamarMemberRecord["status"] =
+      net > 0 ? "is_owed" : net < 0 ? "owes" : "clear"
+    return { net, status }
+  }
+
   const inviteCode = activeRoom?.code || "BELUM-ADA"
   const [copiedCode, setCopiedCode] = useState(false)
 
@@ -248,7 +260,7 @@ export default function AnggotaKosPage() {
                     Hapus / Bubarkan Kamar Kos?
                   </DialogTitle>
                   <DialogDescription className="text-xs leading-relaxed">
-                    Tindakan ini akan menghapus grup kamar kos <strong className="text-foreground">"{activeRoom?.name}"</strong> dari database dan membatalkan seluruh hubungan anggota kos.
+                    Tindakan ini akan menghapus grup kamar kos <strong className="text-foreground">&quot;{activeRoom?.name}&quot;</strong> dari database dan membatalkan seluruh hubungan anggota kos.
                   </DialogDescription>
                 </DialogHeader>
 
@@ -288,7 +300,9 @@ export default function AnggotaKosPage() {
             </CardHeader>
 
             <CardContent className="p-0 space-y-3 pt-2">
-              {members.map((m) => (
+              {members.map((m) => {
+                const { net, status } = memberNet(m.name)
+                return (
                 <div
                   key={m.id}
                   className="flex items-center justify-between p-3.5 rounded-xl border border-border bg-muted/20"
@@ -300,6 +314,7 @@ export default function AnggotaKosPage() {
                     <div>
                       <div className="font-bold text-xs text-foreground flex items-center gap-1.5">
                         {m.name}
+                        {m.isMe && <span className="text-muted-foreground font-normal">(Saya)</span>}
                         {m.role === "Ketua Kos" && (
                           <Badge variant="outline" className="text-[10px] py-0 px-1 font-semibold border-border">
                             Ketua
@@ -311,13 +326,13 @@ export default function AnggotaKosPage() {
                   </div>
 
                   <div className="text-right">
-                    {m.status === "owes" ? (
+                    {status === "owes" ? (
                       <Badge className="bg-rose-500/10 text-rose-600 dark:text-rose-400 border-none shadow-none text-xs font-semibold">
-                        Utang Rp {Math.abs(m.netBalance).toLocaleString("id-ID")}
+                        Utang Rp {Math.abs(net).toLocaleString("id-ID")}
                       </Badge>
-                    ) : m.status === "is_owed" ? (
+                    ) : status === "is_owed" ? (
                       <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-none shadow-none text-xs font-semibold">
-                        Piutang +Rp {m.netBalance.toLocaleString("id-ID")}
+                        Piutang +Rp {net.toLocaleString("id-ID")}
                       </Badge>
                     ) : (
                       <Badge variant="outline" className="text-xs font-normal border-border">
@@ -326,7 +341,8 @@ export default function AnggotaKosPage() {
                     )}
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </CardContent>
           </Card>
 

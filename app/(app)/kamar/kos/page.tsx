@@ -1,8 +1,7 @@
 "use client"
 
-import React, { useState, useEffect } from "react"
-import Link from "next/link"
-import { kamarService, KamarRoomRecord } from "@/lib/db"
+import React, { useState, useEffect, useCallback } from "react"
+import { kamarService, KamarMemberRecord } from "@/lib/db"
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -19,7 +18,6 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  CardFooter,
 } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -56,16 +54,13 @@ import {
 } from "@/components/ui/pagination"
 import { Spinner } from "@/components/ui/spinner"
 import {
-  Users,
   Plus,
   CheckCircle2,
   TrendingUp,
   TrendingDown,
-  Wallet,
   Receipt,
   Search,
   ArrowRight,
-  Filter,
 } from "lucide-react"
 
 export interface SharedTransaction {
@@ -83,8 +78,8 @@ export interface SharedTransaction {
 }
 
 export default function TransaksiKosPage() {
-  const activeUser = "Abimanyu"
-  const members = ["Abimanyu", "Dimas Prasetyo", "Rizky Ramadhan", "Fajar Nugraha"]
+  // Anggota kamar diambil dari data kamar yang sebenarnya (tabel room_members).
+  const [members, setMembers] = useState<KamarMemberRecord[]>([])
 
   // Notification Toast
   const [notification, setNotification] = useState<string | null>(null)
@@ -95,17 +90,6 @@ export default function TransaksiKosPage() {
 
   // Shared Transactions & Room State
   const [transactions, setTransactions] = useState<SharedTransaction[]>([])
-  const [activeRoom, setActiveRoom] = useState<KamarRoomRecord | null>(null)
-
-  useEffect(() => {
-    async function loadTransactions() {
-      const room = kamarService.getUserRoom()
-      setActiveRoom(room)
-      const data = await kamarService.getSharedTransactions()
-      setTransactions(data)
-    }
-    loadTransactions()
-  }, [])
 
   // Filter & Search State
   const [searchQuery, setSearchQuery] = useState("")
@@ -117,24 +101,44 @@ export default function TransaksiKosPage() {
   const [newTitle, setNewTitle] = useState("")
   const [newCategory, setNewCategory] = useState("Konsumsi Kos")
   const [newTotalAmount, setNewTotalAmount] = useState("")
-  const [newPaidBy, setNewPaidBy] = useState("Abimanyu")
-  const [selectedMembers, setSelectedMembers] = useState<string[]>(members)
+  const [newPaidById, setNewPaidById] = useState("")
+  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([])
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(6)
-
-  const toggleMemberSelection = (memberName: string) => {
-    if (selectedMembers.includes(memberName)) {
-      if (selectedMembers.length > 1) {
-        setSelectedMembers(selectedMembers.filter((m) => m !== memberName))
-      }
-    } else {
-      setSelectedMembers([...selectedMembers, memberName])
-    }
-  }
-
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [settlingId, setSettlingId] = useState<string | null>(null)
+
+  const reloadTransactions = useCallback(async () => {
+    setTransactions(await kamarService.getSharedTransactions())
+  }, [])
+
+  useEffect(() => {
+    async function load() {
+      const room = kamarService.getUserRoom()
+      const memberList = await kamarService.getRoomMembers(room?.id)
+      setMembers(memberList)
+
+      const meId = memberList.find((m) => m.isMe)?.userId || memberList[0]?.userId || ""
+      setNewPaidById(meId)
+      setSelectedMemberIds(memberList.map((m) => m.userId || m.id))
+
+      await reloadTransactions()
+    }
+    load()
+  }, [reloadTransactions])
+
+  const memberKey = (m: KamarMemberRecord) => m.userId || m.id
+
+  const toggleMemberSelection = (id: string) => {
+    setSelectedMemberIds((prev) => {
+      if (prev.includes(id)) {
+        return prev.length > 1 ? prev.filter((x) => x !== id) : prev
+      }
+      return [...prev, id]
+    })
+  }
 
   const formatNumberWithDots = (val: string): string => {
     const digits = val.replace(/\D/g, "")
@@ -150,34 +154,27 @@ export default function TransaksiKosPage() {
   const handleAddTransaction = async (e: React.FormEvent) => {
     e.preventDefault()
     const total = parseFormattedNumber(newTotalAmount)
-    if (!newTitle || isNaN(total) || total <= 0) return
+    if (!newTitle || isNaN(total) || total <= 0 || selectedMemberIds.length === 0) return
 
     setIsSubmitting(true)
-    const perPerson = Math.ceil(total / selectedMembers.length)
-    const isPaidByMe = newPaidBy === activeUser
-    const amISharing = selectedMembers.includes(activeUser)
-
-    let myShareVal = 0
-    if (isPaidByMe) {
-      myShareVal = amISharing ? -(total - perPerson) : -total
-    } else {
-      myShareVal = amISharing ? perPerson : 0
-    }
+    const selected = members.filter((m) => selectedMemberIds.includes(memberKey(m)))
+    const payer = members.find((m) => memberKey(m) === newPaidById) || selected[0]
 
     await kamarService.addSharedTransaction({
       title: newTitle,
       category: newCategory,
       totalAmount: total,
-      paidBy: newPaidBy,
-      splitBetween: selectedMembers,
-      perPersonAmount: perPerson,
-      myShare: myShareVal,
+      paidByUserId: payer?.userId || payer?.id || "",
+      paidByName: payer?.name || "Anggota",
+      splitUserIds: selected.map((m) => m.userId || m.id),
+      splitNames: selected.map((m) => m.name),
       status: "pending",
     })
 
-    const refreshed = await kamarService.getSharedTransactions()
-    setTransactions(refreshed)
-    showNotification(`Transaksi talangan "${newTitle}" sebesar Rp ${total.toLocaleString("id-ID")} berhasil dicatat ke database!`)
+    await reloadTransactions()
+    showNotification(
+      `Transaksi talangan "${newTitle}" sebesar Rp ${total.toLocaleString("id-ID")} berhasil dicatat!`,
+    )
 
     setNewTitle("")
     setNewTotalAmount("")
@@ -185,18 +182,20 @@ export default function TransaksiKosPage() {
     setIsAddDialogOpen(false)
   }
 
-  // Handle Settle Bill (Pelunasan Tagihan Saya langsung di tabel)
-  const handleSettleBill = (txId: string) => {
+  // Pelunasan bagian saya langsung dari tabel.
+  const handleSettleBill = async (txId: string) => {
     const targetTx = transactions.find((t) => t.id === txId)
-    if (!targetTx) return
+    if (!targetTx || targetTx.myShare <= 0) return
 
+    setSettlingId(txId)
     const amt = targetTx.myShare
+    await kamarService.settleMyShare(txId)
+    await reloadTransactions()
+    setSettlingId(null)
 
-    setTransactions(
-      transactions.map((t) => (t.id === txId ? { ...t, myShare: 0, status: "settled" } : t))
+    showNotification(
+      `Pelunasan Rp ${amt.toLocaleString("id-ID")} ke ${targetTx.paidBy} untuk "${targetTx.title}" selesai & tercatat di log pribadi!`,
     )
-
-    showNotification(`Pelunasan Rp ${amt.toLocaleString("id-ID")} ke ${targetTx.paidBy} untuk "${targetTx.title}" berhasil diselesaikan!`)
   }
 
   // Calculate Summary Metrics
@@ -396,14 +395,14 @@ export default function TransaksiKosPage() {
 
                   <div className="space-y-1">
                     <label className="text-xs font-semibold text-muted-foreground">Dibayar / Ditalangi Oleh Siapa?</label>
-                    <Select value={newPaidBy} onValueChange={setNewPaidBy}>
+                    <Select value={newPaidById} onValueChange={setNewPaidById}>
                       <SelectTrigger className="w-full font-semibold">
                         <SelectValue placeholder="Pilih Penalang" />
                       </SelectTrigger>
                       <SelectContent>
                         {members.map((m) => (
-                          <SelectItem key={m} value={m}>
-                            {m} {m === activeUser ? "(Saya)" : ""}
+                          <SelectItem key={memberKey(m)} value={memberKey(m)}>
+                            {m.name} {m.isMe ? "(Saya)" : ""}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -415,19 +414,20 @@ export default function TransaksiKosPage() {
                     <label className="text-xs font-semibold text-muted-foreground">Ditanggung Oleh (Beban Dibagi Ke):</label>
                     <div className="grid grid-cols-2 gap-2 p-2.5 rounded-xl border border-border bg-muted/30">
                       {members.map((m) => {
-                        const isSelected = selectedMembers.includes(m)
+                        const id = memberKey(m)
+                        const isSelected = selectedMemberIds.includes(id)
                         return (
                           <button
-                            key={m}
+                            key={id}
                             type="button"
-                            onClick={() => toggleMemberSelection(m)}
+                            onClick={() => toggleMemberSelection(id)}
                             className={`py-1.5 px-2.5 rounded-lg text-xs font-semibold flex items-center justify-between border transition-all ${
                               isSelected
                                 ? "bg-primary/10 border-primary/30 text-primary"
                                 : "bg-card border-border text-muted-foreground hover:text-foreground"
                             }`}
                           >
-                            <span>{m}</span>
+                            <span>{m.name}{m.isMe ? " (Saya)" : ""}</span>
                             {isSelected && <CheckCircle2 className="size-3.5 text-primary" />}
                           </button>
                         )
@@ -436,7 +436,7 @@ export default function TransaksiKosPage() {
                     <div className="text-[11px] text-muted-foreground">
                       Per orang menanggung:{" "}
                       <strong className="text-foreground">
-                        Rp {Math.ceil((parseFormattedNumber(newTotalAmount) || 0) / selectedMembers.length).toLocaleString("id-ID")}
+                        Rp {Math.ceil((parseFormattedNumber(newTotalAmount) || 0) / Math.max(1, selectedMemberIds.length)).toLocaleString("id-ID")}
                       </strong>
                     </div>
                   </div>
@@ -558,11 +558,12 @@ export default function TransaksiKosPage() {
                           </Badge>
                         </TableCell>
                         <TableCell className="px-3.5 py-3 text-xs font-bold text-foreground whitespace-nowrap">
-                          {tx.paidBy} {tx.paidBy === activeUser ? "(Saya)" : ""}
+                          {tx.paidBy}
+                          {members.find((m) => m.isMe)?.name === tx.paidBy ? " (Saya)" : ""}
                         </TableCell>
                         <TableCell className="px-3.5 py-3 text-xs text-muted-foreground max-w-[160px] truncate">
-                          {tx.splitBetween.length === members.length
-                            ? "Semua Anggota (4)"
+                          {members.length > 0 && tx.splitBetween.length >= members.length
+                            ? `Semua Anggota (${members.length})`
                             : tx.splitBetween.join(", ")}
                         </TableCell>
                         <TableCell className="px-3.5 py-3 font-bold text-xs text-foreground whitespace-nowrap">
@@ -586,10 +587,15 @@ export default function TransaksiKosPage() {
                             <Button
                               size="sm"
                               variant="outline"
+                              disabled={settlingId === tx.id}
                               className="h-7 text-xs shadow-none border-amber-500/40 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 font-semibold px-2"
                               onClick={() => handleSettleBill(tx.id)}
                             >
-                              Bayar Ke {tx.paidBy.split(" ")[0]} <ArrowRight className="size-3 ml-1" />
+                              {settlingId === tx.id ? (
+                                <span className="flex items-center gap-1"><Spinner className="size-3" /> Memproses...</span>
+                              ) : (
+                                <>Bayar Ke {tx.paidBy.split(" ")[0]} <ArrowRight className="size-3 ml-1" /></>
+                              )}
                             </Button>
                           ) : tx.myShare < 0 ? (
                             <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-none shadow-none text-[11px] font-semibold px-2 py-0.5">

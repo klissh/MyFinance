@@ -51,8 +51,6 @@ import {
   CreditCard as CreditCardIcon,
   Plus,
   ArrowLeftRight,
-  ArrowUpRight,
-  ArrowDownLeft,
   CheckCircle2,
 } from "lucide-react"
 import { Spinner } from "@/components/ui/spinner"
@@ -92,11 +90,6 @@ export default function FinancePage() {
         date: t.formattedDate,
       }))
       setMutations(formattedMutations)
-
-      const user = authService.getCurrentUser()
-      if (user) {
-        setNewAccCardHolder(user.fullName)
-      }
     }
     loadFinanceData()
   }, [])
@@ -108,7 +101,9 @@ export default function FinancePage() {
   const [newAccType, setNewAccType] = useState("Rekening Utama")
   const [newAccBalance, setNewAccBalance] = useState("")
   const [newAccNumber, setNewAccNumber] = useState("")
-  const [newAccCardHolder, setNewAccCardHolder] = useState("")
+  const [newAccCardHolder, setNewAccCardHolder] = useState(
+    () => authService.getCurrentUser()?.fullName ?? "",
+  )
   const [newAccDesign, setNewAccDesign] = useState<FinancialAccountRecord["cardDesignType"]>("brand-dark")
 
   const [isTransferDialogOpen, setIsTransferDialogOpen] = useState(false)
@@ -192,35 +187,42 @@ export default function FinancePage() {
     await accountService.updateBalanceByName(transferTo, newToBalance)
 
     const dateObj = new Date()
-    const isoDate = dateObj.toISOString().split("T")[0]
+    const isoDate = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, "0")}-${String(dateObj.getDate()).padStart(2, "0")}`
     const formattedDate = dateObj.toLocaleDateString("id-ID", {
       day: "2-digit",
       month: "short",
       year: "numeric",
     })
 
-    // 2. Record 2 transfer transactions (Outflow from source, Inflow to target)
-    await transactionService.add({
-      title: `Transfer ke ${transferTo}`,
-      category: "Transfer",
-      type: "out",
-      amount: amt,
-      account: transferFrom,
-      date: isoDate,
-      formattedDate: formattedDate,
-      notes: `Transfer saldo ke ${transferTo}`,
-    })
+    // 2. Record 2 transfer transactions (Outflow from source, Inflow to target).
+    //    adjustBalance: false — saldo sudah diset absolut di langkah 1.
+    await transactionService.add(
+      {
+        title: `Transfer ke ${transferTo}`,
+        category: "Transfer",
+        type: "out",
+        amount: amt,
+        account: transferFrom,
+        date: isoDate,
+        formattedDate: formattedDate,
+        notes: `Transfer saldo ke ${transferTo}`,
+      },
+      { adjustBalance: false },
+    )
 
-    await transactionService.add({
-      title: `Transfer dari ${transferFrom}`,
-      category: "Transfer",
-      type: "in",
-      amount: amt,
-      account: transferTo,
-      date: isoDate,
-      formattedDate: formattedDate,
-      notes: `Transfer saldo masuk dari ${transferFrom}`,
-    })
+    await transactionService.add(
+      {
+        title: `Transfer dari ${transferFrom}`,
+        category: "Transfer",
+        type: "in",
+        amount: amt,
+        account: transferTo,
+        date: isoDate,
+        formattedDate: formattedDate,
+        notes: `Transfer saldo masuk dari ${transferFrom}`,
+      },
+      { adjustBalance: false },
+    )
 
     // 3. Refresh accounts & mutations list
     const [updatedAccs, updatedTxs] = await Promise.all([
@@ -410,7 +412,7 @@ export default function FinancePage() {
 
                   <div className="space-y-1">
                     <label className="text-xs font-semibold text-muted-foreground">Desain Kartu</label>
-                    <Select value={newAccDesign} onValueChange={(val) => setNewAccDesign(val as any)}>
+                    <Select value={newAccDesign} onValueChange={(val) => setNewAccDesign(val as FinancialAccountRecord["cardDesignType"])}>
                       <SelectTrigger className="w-full">
                         <SelectValue placeholder="Warna Kartu" />
                       </SelectTrigger>

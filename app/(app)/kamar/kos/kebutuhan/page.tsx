@@ -1,8 +1,7 @@
 "use client"
 
 import React, { useState, useEffect } from "react"
-import Link from "next/link"
-import { kamarService, KamarRoomRecord } from "@/lib/db"
+import { kamarService, KamarMemberRecord } from "@/lib/db"
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -56,16 +55,12 @@ import {
 } from "@/components/ui/pagination"
 import { Spinner } from "@/components/ui/spinner"
 import {
-  Zap,
-  Wifi,
   Receipt,
   Plus,
   CheckCircle2,
-  Sparkles,
   ArrowRight,
   Clock,
   Wallet,
-  Flame,
   Check,
   Search,
   LayoutGrid,
@@ -86,8 +81,6 @@ interface KosRoutineRequirement {
 }
 
 export default function KebutuhanBulananKosPage() {
-  const membersCount = 4
-
   // Notification Toast
   const [notification, setNotification] = useState<string | null>(null)
   const showNotification = (msg: string) => {
@@ -97,20 +90,15 @@ export default function KebutuhanBulananKosPage() {
 
   // Routine Requirements & Room State
   const [requirements, setRequirements] = useState<KosRoutineRequirement[]>([])
-  const [activeRoom, setActiveRoom] = useState<KamarRoomRecord | null>(null)
+  const [members, setMembers] = useState<KamarMemberRecord[]>([])
 
-  useEffect(() => {
-    async function loadRequirements() {
-      const room = kamarService.getUserRoom()
-      setActiveRoom(room)
-      const data = await kamarService.getRequirements()
-      const formatted = data.map((r) => ({
-        ...r,
-        icon: <Receipt className="size-4 text-primary" />,
-      }))
-      setRequirements(formatted)
-    }
-    loadRequirements()
+  const membersCount = members.length || 4
+
+  const reloadRequirements = React.useCallback(async () => {
+    const data = await kamarService.getRequirements()
+    setRequirements(
+      data.map((r) => ({ ...r, icon: <Receipt className="size-4 text-primary" /> })),
+    )
   }, [])
 
   // View Mode State: 'table' (default) or 'grid'
@@ -126,8 +114,25 @@ export default function KebutuhanBulananKosPage() {
   const [newCategory, setNewCategory] = useState("Listrik & Utilitas")
   const [newTotalPrice, setNewTotalPrice] = useState("")
   const [newSplitCount, setNewSplitCount] = useState("4")
-  const [newDueDate, setNewDueDate] = useState("25 Aug 2026")
-  const [newResponsible, setNewResponsible] = useState("Abimanyu")
+  const [newDueDate, setNewDueDate] = useState("")
+  const [newResponsible, setNewResponsible] = useState("")
+
+  useEffect(() => {
+    async function load() {
+      const room = kamarService.getUserRoom()
+      const memberList = await kamarService.getRoomMembers(room?.id)
+      setMembers(memberList)
+      if (memberList.length > 0) {
+        // Default split-count & penanggung jawab mengikuti anggota kamar yang sebenarnya.
+        setNewSplitCount(String(memberList.length))
+        setNewResponsible(
+          memberList.find((m) => m.isMe)?.name || memberList[0].name,
+        )
+      }
+      await reloadRequirements()
+    }
+    load()
+  }, [reloadRequirements])
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1)
@@ -154,33 +159,25 @@ export default function KebutuhanBulananKosPage() {
     if (!newTitle || isNaN(total) || total <= 0) return
 
     setIsSubmitting(true)
-    const perPerson = Math.ceil(total / count)
 
-    const list = await kamarService.getRequirements()
-    const updated = [
-      {
-        id: `REQ-${Date.now().toString().slice(-4)}`,
-        title: newTitle,
-        category: newCategory,
-        totalPrice: total,
-        splitPeopleCount: count,
-        perPersonPrice: perPerson,
-        dueDate: newDueDate,
-        responsiblePerson: newResponsible,
-        isPaidByMe: false,
-      },
-      ...list,
-    ]
-    if (typeof window !== "undefined") {
-      localStorage.setItem("myfinance_db_requirements", JSON.stringify(updated))
-    }
+    // Simpan lewat service (insert ke Supabase room_requirements + cache lokal ter-scope).
+    await kamarService.addRequirement({
+      title: newTitle,
+      category: newCategory,
+      totalPrice: total,
+      splitPeopleCount: count,
+      dueDate: newDueDate || new Date().toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }),
+      responsiblePerson: newResponsible || "Ketua Kos",
+    })
 
-    const refreshed = await kamarService.getRequirements()
-    setRequirements(refreshed.map((r) => ({ ...r, icon: <Receipt className="size-4 text-primary" /> })))
-    showNotification(`Kebutuhan bulanan "${newTitle}" (Rp ${total.toLocaleString("id-ID")}) berhasil disimpan ke database!`)
+    await reloadRequirements()
+    showNotification(
+      `Kebutuhan bulanan "${newTitle}" (Rp ${total.toLocaleString("id-ID")}) berhasil disimpan!`,
+    )
 
     setNewTitle("")
     setNewTotalPrice("")
+    setNewDueDate("")
     setIsSubmitting(false)
     setIsAddOpen(false)
   }
@@ -192,8 +189,7 @@ export default function KebutuhanBulananKosPage() {
 
     setPayingId(id)
     await kamarService.payRequirement(id)
-    const refreshed = await kamarService.getRequirements()
-    setRequirements(refreshed.map((r) => ({ ...r, icon: <Receipt className="size-4 text-primary" /> })))
+    await reloadRequirements()
 
     showNotification(
       `Setoran Rp ${item.perPersonPrice.toLocaleString("id-ID")} untuk "${item.title}" berhasil dibayar & dicatat di database!`
@@ -439,10 +435,11 @@ export default function KebutuhanBulananKosPage() {
                             <SelectValue placeholder="Jumlah Orang" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="2">2 Orang</SelectItem>
-                            <SelectItem value="3">3 Orang</SelectItem>
-                            <SelectItem value="4">4 Orang (Semua Penghuni)</SelectItem>
-                            <SelectItem value="5">5 Orang</SelectItem>
+                            {Array.from({ length: Math.max(5, membersCount) }, (_, i) => i + 2).map((n) => (
+                              <SelectItem key={n} value={String(n)}>
+                                {n} Orang{n === membersCount ? " (Semua Penghuni)" : ""}
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                       </div>
@@ -465,10 +462,17 @@ export default function KebutuhanBulananKosPage() {
                           <SelectValue placeholder="Penanggung Jawab" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="Abimanyu">Abimanyu (Ketua Kos)</SelectItem>
-                          <SelectItem value="Dimas Prasetyo">Dimas Prasetyo</SelectItem>
-                          <SelectItem value="Rizky Ramadhan">Rizky Ramadhan</SelectItem>
-                          <SelectItem value="Fajar Nugraha">Fajar Nugraha</SelectItem>
+                          {members.length > 0 ? (
+                            members.map((m) => (
+                              <SelectItem key={m.id} value={m.name}>
+                                {m.name}
+                                {m.role === "Ketua Kos" ? " (Ketua Kos)" : ""}
+                                {m.isMe ? " — Saya" : ""}
+                              </SelectItem>
+                            ))
+                          ) : (
+                            <SelectItem value="Ketua Kos">Ketua Kos</SelectItem>
+                          )}
                         </SelectContent>
                       </Select>
                     </div>

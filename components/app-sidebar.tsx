@@ -59,6 +59,8 @@ const navMain = [
 ]
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  // Default statis dulu (aman untuk SSR/hydration); nilai asli dari localStorage
+  // dibaca setelah mount pada effect di bawah.
   const [currentUser, setCurrentUser] = React.useState<UserSession>({
     id: "usr_default",
     fullName: "Pengguna",
@@ -66,27 +68,34 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   })
   const [activeRoom, setActiveRoom] = React.useState<KamarRoomRecord | null>(null)
 
-  const checkUserDataAndRoom = React.useCallback(() => {
+  const refreshFromCache = React.useCallback(() => {
     const user = authService.getCurrentUser()
-    if (user) {
-      setCurrentUser(user)
-    }
-    const room = kamarService.getUserRoom()
-    setActiveRoom(room)
+    if (user) setCurrentUser(user)
+    setActiveRoom(kamarService.getUserRoom())
   }, [])
 
   React.useEffect(() => {
-    checkUserDataAndRoom()
-
-    const handleRoomUpdate = () => {
-      checkUserDataAndRoom()
-    }
-
+    // Sinkronisasi satu kali dari cache localStorage saat mount (bukan cascading render).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    refreshFromCache()
+    const handleRoomUpdate = () => refreshFromCache()
     window.addEventListener("room-updated", handleRoomUpdate)
+    return () => window.removeEventListener("room-updated", handleRoomUpdate)
+  }, [refreshFromCache])
+
+  // Saat aplikasi dibuka: verifikasi user & sinkronkan keanggotaan kamar dari
+  // Supabase supaya status "sudah gabung kamar mana" ikut pindah antar device.
+  React.useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const verified = await authService.getVerifiedUser()
+      if (!cancelled && verified) setCurrentUser(verified)
+      await kamarService.syncUserRoom() // memicu event "room-updated" → refreshFromCache
+    })()
     return () => {
-      window.removeEventListener("room-updated", handleRoomUpdate)
+      cancelled = true
     }
-  }, [checkUserDataAndRoom])
+  }, [])
 
   const userData = {
     name: currentUser.fullName,

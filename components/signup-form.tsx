@@ -57,7 +57,11 @@ export function SignupForm({
     }
 
     setIsLoading(true)
-    const { user, error } = await authService.signup(fullName, email, password)
+    const { user, needsConfirmation, error } = await authService.signup(
+      fullName,
+      email,
+      password,
+    )
     setIsLoading(false)
 
     if (error) {
@@ -65,8 +69,15 @@ export function SignupForm({
       return
     }
 
+    if (user && !needsConfirmation) {
+      // Konfirmasi email dimatikan → sudah login, langsung ke dashboard.
+      router.push("/dashboard")
+      router.refresh()
+      return
+    }
+
     if (user) {
-      // Redirect to email confirmation page
+      // Perlu konfirmasi email dulu.
       router.push(`/signup/confirm?email=${encodeURIComponent(email)}`)
     }
   }

@@ -5,7 +5,6 @@ import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { Card, CardContent, CardFooter } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import {
   Wallet,
   MailCheck,
@@ -78,7 +77,7 @@ function EmailConfirmContent() {
           </div>
 
           <p className="text-xs md:text-sm text-muted-foreground text-center leading-relaxed">
-            Silakan buka kotak masuk email Anda dan klik tautan <strong className="text-foreground font-semibold">"Konfirmasi Email Sekarang"</strong> untuk mengaktifkan akun Anda. Setelah itu, Anda dapat masuk ke aplikasi.
+            Silakan buka kotak masuk email Anda dan klik tautan <strong className="text-foreground font-semibold">&quot;Konfirmasi Email Sekarang&quot;</strong> untuk mengaktifkan akun Anda. Setelah itu, Anda dapat masuk ke aplikasi.
           </p>
 
           <div className="pt-2 space-y-3 w-full">

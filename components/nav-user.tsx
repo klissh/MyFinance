@@ -37,8 +37,9 @@ export function NavUser({
   const router = useRouter()
 
   const handleLogout = async () => {
+    // authService.logout() memanggil supabase.auth.signOut() yang otomatis
+    // menghapus cookie sesi Supabase.
     await authService.logout()
-    document.cookie = "myfinance_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT"
     router.push("/login")
     router.refresh()
   }

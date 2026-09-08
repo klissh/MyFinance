@@ -43,7 +43,8 @@ export function LoginForm({
     }
 
     if (user) {
-      document.cookie = "myfinance_session=true; path=/; max-age=604800"
+      // Sesi disimpan sebagai cookie oleh Supabase (@supabase/ssr).
+      // proxy.ts akan memverifikasinya di server.
       router.push("/dashboard")
       router.refresh()
     }

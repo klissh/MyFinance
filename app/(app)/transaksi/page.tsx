@@ -18,7 +18,6 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  CardFooter,
 } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -169,7 +168,8 @@ export default function TransaksiPage() {
 
     setIsSubmitting(true)
     const dateObj = newSelectedDate || new Date()
-    const isoDate = dateObj.toISOString().split("T")[0]
+    // Tanggal lokal (bukan UTC) supaya tidak mundur 1 hari di UTC+8.
+    const isoDate = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, "0")}-${String(dateObj.getDate()).padStart(2, "0")}`
     const formatted = dateObj.toLocaleDateString("id-ID", {
       day: "2-digit",
       month: "short",

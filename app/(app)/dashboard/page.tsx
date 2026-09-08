@@ -33,9 +33,11 @@ import {
   transactionService,
   goalService,
   kamarService,
+  accountService,
   TransactionRecord,
   GoalRecord,
   SharedTransactionRecord,
+  FinancialAccountRecord,
 } from "@/lib/db"
 import {
   Wallet,
@@ -54,28 +56,37 @@ import {
 export default function DashboardPage() {
   // MYR to IDR Live Rate Converter State
   const [myrInput, setMyrInput] = useState<number | string>(100)
-  const rateMYRtoIDR = 4403.0 // Official spot rate benchmark
+  const [rateMYRtoIDR, setRateMYRtoIDR] = useState<number>(4403.0) // fallback sampai API menjawab
 
   // Database States
   const [transactions, setTransactions] = useState<TransactionRecord[]>([])
   const [goals, setGoals] = useState<GoalRecord[]>([])
   const [sharedTx, setSharedTx] = useState<SharedTransactionRecord[]>([])
-  const [isLoading, setIsLoading] = useState(true)
+  const [accounts, setAccounts] = useState<FinancialAccountRecord[]>([])
 
   useEffect(() => {
     async function loadData() {
-      setIsLoading(true)
-      const [txList, goalList, sharedList] = await Promise.all([
+      const [txList, goalList, sharedList, accList] = await Promise.all([
         transactionService.getAll(),
         goalService.getAll(),
         kamarService.getSharedTransactions(),
+        accountService.getAll(),
       ])
       setTransactions(txList)
       setGoals(goalList)
       setSharedTx(sharedList)
-      setIsLoading(false)
+      setAccounts(accList)
     }
     loadData()
+
+    // Kurs MYR live dari API internal.
+    fetch("/api/kurs")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        const rate = d?.rates?.MYR
+        if (typeof rate === "number" && rate > 0) setRateMYRtoIDR(rate)
+      })
+      .catch(() => {})
   }, [])
 
   // Calculate Dynamic Metrics from DB
@@ -140,13 +151,6 @@ export default function DashboardPage() {
   ]
 
   // Sumber Dana / Accounts Data
-  const accounts = [
-    { name: "Bank BCA", type: "Rekening Utama", balance: "Rp 0" },
-    { name: "Bank Mandiri", type: "Tabungan Target", balance: "Rp 0" },
-    { name: "Tunai / Cash", type: "Dompet Fisik", balance: "Rp 0" },
-    { name: "GoPay / E-Wallet", type: "Digital", balance: "Rp 0" },
-  ]
-
   return (
     <div className="flex flex-col min-w-0 max-w-full overflow-x-hidden">
       {/* Header Bar */}
@@ -349,18 +353,29 @@ export default function DashboardPage() {
               </CardHeader>
 
               <CardContent className="p-0 space-y-3">
-                {accounts.map((acc, idx) => (
-                  <div
-                    key={idx}
-                    className="flex items-center justify-between p-3 rounded-xl border border-border bg-card"
-                  >
-                    <div className="space-y-0.5">
-                      <div className="text-xs font-bold text-foreground">{acc.name}</div>
-                      <div className="text-[11px] text-muted-foreground">{acc.type}</div>
-                    </div>
-                    <div className="text-xs font-extrabold text-foreground">{acc.balance}</div>
+                {accounts.length === 0 ? (
+                  <div className="text-center py-5 text-xs text-muted-foreground space-y-2">
+                    <p>Belum ada sumber dana.</p>
+                    <Button asChild size="sm" variant="outline" className="text-xs border-border shadow-none">
+                      <Link href="/finance">+ Tambah Sumber Dana</Link>
+                    </Button>
                   </div>
-                ))}
+                ) : (
+                  accounts.map((acc) => (
+                    <div
+                      key={acc.id}
+                      className="flex items-center justify-between p-3 rounded-xl border border-border bg-card"
+                    >
+                      <div className="space-y-0.5">
+                        <div className="text-xs font-bold text-foreground">{acc.name}</div>
+                        <div className="text-[11px] text-muted-foreground">{acc.type}</div>
+                      </div>
+                      <div className="text-xs font-extrabold text-foreground">
+                        Rp {acc.balance.toLocaleString("id-ID")}
+                      </div>
+                    </div>
+                  ))
+                )}
               </CardContent>
             </Card>
 
@@ -438,7 +453,9 @@ export default function DashboardPage() {
                   <div className="text-lg font-extrabold text-emerald-600 dark:text-emerald-400">
                     Rp {((Number(myrInput) || 0) * rateMYRtoIDR).toLocaleString("id-ID")}
                   </div>
-                  <div className="text-[10px] text-muted-foreground">1 MYR = Rp 4.403,00 IDR</div>
+                  <div className="text-[10px] text-muted-foreground">
+                    1 MYR = Rp {rateMYRtoIDR.toLocaleString("id-ID", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} IDR
+                  </div>
                 </div>
               </CardContent>
             </Card>

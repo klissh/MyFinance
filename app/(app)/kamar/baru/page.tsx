@@ -15,7 +15,6 @@ import { Separator } from "@/components/ui/separator"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import {
   Card,
-  CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
@@ -23,7 +22,6 @@ import {
 } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
 import {
   Select,
   SelectContent,
@@ -34,7 +32,6 @@ import {
 import { Spinner } from "@/components/ui/spinner"
 import {
   Plus,
-  Users,
   KeyRound,
   Building2,
   CheckCircle2,
@@ -98,9 +95,15 @@ export default function BuatKamarBaruPage() {
     if (!joinCode) return
 
     setIsSubmittingJoin(true)
-    const room = await kamarService.joinRoom(joinCode)
-    showNotification(`Berhasil bergabung ke kamar dengan kode "${room.code}"!`)
+    const { room, error } = await kamarService.joinRoom(joinCode)
     setIsSubmittingJoin(false)
+
+    if (error || !room) {
+      showNotification(error || "Gagal bergabung ke kamar.")
+      return
+    }
+
+    showNotification(`Berhasil bergabung ke kamar "${room.name}" (kode ${room.code})!`)
     router.push("/kamar/kos")
   }
 

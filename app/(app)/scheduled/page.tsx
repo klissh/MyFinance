@@ -37,7 +37,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
   DialogClose,
 } from "@/components/ui/dialog"
 import {
@@ -58,7 +57,6 @@ import { Spinner } from "@/components/ui/spinner"
 import {
   Calendar as CalendarIcon,
   Clock,
-  Plus,
   CheckCircle2,
   TrendingDown,
   Sparkles,
@@ -121,7 +119,8 @@ export default function ScheduledPage() {
 
     const parsedAmount = parseFormattedNumber(newAmount)
     const dateObj = newSelectedDate || new Date()
-    const isoDate = dateObj.toISOString().split("T")[0]
+    // Tanggal lokal (bukan UTC) supaya tidak mundur 1 hari di UTC+8.
+    const isoDate = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, "0")}-${String(dateObj.getDate()).padStart(2, "0")}`
     const formatted = dateObj.toLocaleDateString("id-ID", {
       day: "2-digit",
       month: "short",
@@ -460,7 +459,7 @@ export default function ScheduledPage() {
                 Daftar Tagihan & Pembayaran Rutin Mendatang
               </CardTitle>
               <CardDescription className="text-sm">
-                Klik "Bayar Sekarang" untuk memproses tagihan & mencatat otomatis ke log transaksi
+                Klik &quot;Bayar Sekarang&quot; untuk memproses tagihan &amp; mencatat otomatis ke log transaksi
               </CardDescription>
             </div>
           </CardHeader>
