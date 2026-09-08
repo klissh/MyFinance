@@ -66,6 +66,8 @@ export default function DashboardPage() {
 
   useEffect(() => {
     async function loadData() {
+      // Selaraskan dampak split bill kos ke transaksi pribadi lebih dulu.
+      await kamarService.reconcileRoomLedger()
       const [txList, goalList, sharedList, accList] = await Promise.all([
         transactionService.getAll(),
         goalService.getAll(),

@@ -90,7 +90,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     ;(async () => {
       const verified = await authService.getVerifiedUser()
       if (!cancelled && verified) setCurrentUser(verified)
-      await kamarService.syncUserRoom() // memicu event "room-updated" → refreshFromCache
+      const room = await kamarService.syncUserRoom() // memicu event "room-updated" → refreshFromCache
+      // Selaraskan dampak split bill kos ke transaksi pribadi sekali per sesi.
+      if (!cancelled && room?.id) await kamarService.reconcileRoomLedger(room.id)
     })()
     return () => {
       cancelled = true

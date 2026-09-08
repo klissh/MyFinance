@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState, useEffect } from "react"
-import { transactionService } from "@/lib/db"
+import { transactionService, kamarService, stripLedgerRef } from "@/lib/db"
 import { format } from "date-fns"
 import { cn } from "@/lib/utils"
 import {
@@ -88,6 +88,8 @@ export default function TransaksiPage() {
 
   useEffect(() => {
     async function loadTransactions() {
+      // Selaraskan dampak split bill kos (talangan / pengembalian) lebih dulu.
+      await kamarService.reconcileRoomLedger()
       const data = await transactionService.getAll()
       setTransactions(data)
     }
@@ -124,7 +126,7 @@ export default function TransaksiPage() {
     const matchesSearch =
       tx.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       tx.account.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (tx.notes && tx.notes.toLowerCase().includes(searchQuery.toLowerCase()))
+      stripLedgerRef(tx.notes).toLowerCase().includes(searchQuery.toLowerCase())
 
     const matchesCategory = categoryFilter === "all" || tx.category === categoryFilter
     const matchesType = typeFilter === "all" || tx.type === typeFilter
@@ -549,8 +551,8 @@ export default function TransaksiPage() {
                       </TableCell>
                       <TableCell className="px-5 py-3.5">
                         <div className="font-semibold text-sm">{tx.title}</div>
-                        {tx.notes && (
-                          <div className="text-xs text-muted-foreground">{tx.notes}</div>
+                        {stripLedgerRef(tx.notes) && (
+                          <div className="text-xs text-muted-foreground">{stripLedgerRef(tx.notes)}</div>
                         )}
                       </TableCell>
                       <TableCell className="px-5 py-3.5">

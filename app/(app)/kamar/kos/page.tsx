@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState, useEffect, useCallback } from "react"
-import { kamarService, KamarMemberRecord } from "@/lib/db"
+import { kamarService, accountService, KamarMemberRecord, FinancialAccountRecord } from "@/lib/db"
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -80,6 +80,7 @@ export interface SharedTransaction {
 export default function TransaksiKosPage() {
   // Anggota kamar diambil dari data kamar yang sebenarnya (tabel room_members).
   const [members, setMembers] = useState<KamarMemberRecord[]>([])
+  const [accounts, setAccounts] = useState<FinancialAccountRecord[]>([])
 
   // Notification Toast
   const [notification, setNotification] = useState<string | null>(null)
@@ -103,6 +104,7 @@ export default function TransaksiKosPage() {
   const [newTotalAmount, setNewTotalAmount] = useState("")
   const [newPaidById, setNewPaidById] = useState("")
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([])
+  const [newPayerAccount, setNewPayerAccount] = useState("")
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1)
@@ -117,12 +119,22 @@ export default function TransaksiKosPage() {
   useEffect(() => {
     async function load() {
       const room = kamarService.getUserRoom()
-      const memberList = await kamarService.getRoomMembers(room?.id)
+      // Selaraskan dampak split bill ke transaksi pribadi lebih dulu.
+      await kamarService.reconcileRoomLedger(room?.id)
+
+      const [memberList, accList] = await Promise.all([
+        kamarService.getRoomMembers(room?.id),
+        accountService.getAll(),
+      ])
       setMembers(memberList)
+      setAccounts(accList)
 
       const meId = memberList.find((m) => m.isMe)?.userId || memberList[0]?.userId || ""
       setNewPaidById(meId)
       setSelectedMemberIds(memberList.map((m) => m.userId || m.id))
+      setNewPayerAccount(
+        accList.find((a) => a.accountCategory === "bank")?.name || accList[0]?.name || "",
+      )
 
       await reloadTransactions()
     }
@@ -159,6 +171,7 @@ export default function TransaksiKosPage() {
     setIsSubmitting(true)
     const selected = members.filter((m) => selectedMemberIds.includes(memberKey(m)))
     const payer = members.find((m) => memberKey(m) === newPaidById) || selected[0]
+    const payerIsMe = !!payer?.isMe
 
     await kamarService.addSharedTransaction({
       title: newTitle,
@@ -168,12 +181,15 @@ export default function TransaksiKosPage() {
       paidByName: payer?.name || "Anggota",
       splitUserIds: selected.map((m) => m.userId || m.id),
       splitNames: selected.map((m) => m.name),
+      payerAccount: payerIsMe ? newPayerAccount : undefined,
       status: "pending",
     })
 
     await reloadTransactions()
     showNotification(
-      `Transaksi talangan "${newTitle}" sebesar Rp ${total.toLocaleString("id-ID")} berhasil dicatat!`,
+      payerIsMe
+        ? `Talangan "${newTitle}" Rp ${total.toLocaleString("id-ID")} dicatat. Rp ${total.toLocaleString("id-ID")} otomatis masuk sebagai pengeluaran di transaksi pribadi kamu.`
+        : `Talangan "${newTitle}" Rp ${total.toLocaleString("id-ID")} dicatat atas nama ${payer?.name}.`,
     )
 
     setNewTitle("")
@@ -408,6 +424,35 @@ export default function TransaksiKosPage() {
                       </SelectContent>
                     </Select>
                   </div>
+
+                  {/* Akun sumber dana penalang — hanya muncul kalau SAYA yang menalangi.
+                      Uang keluar dari akun ini, dan pengembalian dari anggota juga masuk ke sini. */}
+                  {members.find((m) => memberKey(m) === newPaidById)?.isMe && (
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-muted-foreground">
+                        Dibayar Pakai Akun (uang keluar dari sini)
+                      </label>
+                      {accounts.length > 0 ? (
+                        <Select value={newPayerAccount} onValueChange={setNewPayerAccount}>
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Pilih akun" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {accounts.map((a) => (
+                              <SelectItem key={a.id} value={a.name}>
+                                {a.name} (Rp {a.balance.toLocaleString("id-ID")})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                          Belum ada sumber dana — pengeluaran tetap tercatat tapi saldo tidak berubah.
+                          Tambah akun di menu Sumber Dana.
+                        </p>
+                      )}
+                    </div>
+                  )}
 
                   {/* Members Checklist */}
                   <div className="space-y-1.5">

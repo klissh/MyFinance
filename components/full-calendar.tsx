@@ -25,6 +25,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { stripLedgerRef } from "@/lib/db"
 
 export interface CalendarTransaction {
   id: string
@@ -627,8 +628,8 @@ export function FullCalendar({
                         {tx.type === "in" ? "+" : "-"}Rp{" "}
                         {tx.amount.toLocaleString("id-ID")}
                       </div>
-                      {tx.notes && (
-                        <div className="text-xs text-muted-foreground">{tx.notes}</div>
+                      {stripLedgerRef(tx.notes) && (
+                        <div className="text-xs text-muted-foreground">{stripLedgerRef(tx.notes)}</div>
                       )}
                     </div>
                   </div>
