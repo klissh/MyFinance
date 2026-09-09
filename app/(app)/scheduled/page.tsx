@@ -63,6 +63,7 @@ import {
 import { Calendar } from "@/components/ui/calendar"
 import { FullCalendar, CalendarTransaction } from "@/components/full-calendar"
 import { ListCard, ListCardHead, ListCardMeta } from "@/components/ui/list-card"
+import { MetricCard } from "@/components/ui/metric-card"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -78,8 +79,6 @@ import {
   Calendar as CalendarIcon,
   Clock,
   CheckCircle2,
-  TrendingDown,
-  Sparkles,
   ArrowRight,
   Pencil,
   Trash2,
@@ -486,93 +485,45 @@ export default function ScheduledPage() {
       </header>
 
       {/* Main Container */}
-      <div className="flex flex-1 flex-col gap-6 p-4 md:p-6 bg-background min-h-screen">
+      <div className="flex flex-1 flex-col gap-6 p-4 md:p-6 bg-background">
         {/* Toast Notification Banner */}
         {notification && (
-          <div className="flex items-center gap-3 p-4 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-800 dark:text-emerald-300 text-xs font-medium animate-in fade-in slide-in-from-top-2">
-            <CheckCircle2 className="size-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+          <div className="flex items-center gap-2.5 rounded-xl border border-border bg-card px-3.5 py-3 text-xs text-foreground shadow-sm animate-in fade-in slide-in-from-top-2">
+            <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
             <span>{notification}</span>
           </div>
         )}
 
         {/* 1. Summary Metric Strip */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-          <Card className="shadow-none border border-border p-3.5 gap-2 bg-card sm:p-5 sm:gap-3">
-            <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
-                Tagihan Mendatang Bulan Ini
-              </CardTitle>
-              <div className="p-2 rounded-xl bg-amber-500/10 text-amber-600">
-                <Clock className="size-4" />
-              </div>
-            </CardHeader>
-            <CardContent className="p-0 space-y-1">
-              <div className="text-lg sm:text-2xl font-bold tracking-tight text-amber-600 dark:text-amber-400">
-                {pendingBills.length} Tagihan
-              </div>
-              <p className="text-xs text-muted-foreground">Perlu dibayarkan bulan ini</p>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-none border border-border p-3.5 gap-2 bg-card sm:p-5 sm:gap-3">
-            <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
-                Estimasi Total Nominal Terjadwal
-              </CardTitle>
-              <div className="p-2 rounded-xl bg-rose-500/10 text-rose-600">
-                <TrendingDown className="size-4" />
-              </div>
-            </CardHeader>
-            <CardContent className="p-0 space-y-1">
-              <div className="text-lg sm:text-2xl font-bold tracking-tight text-rose-600 dark:text-rose-400">
-                {fmt(totalPendingAmount)}
-              </div>
-              <p className="text-xs text-muted-foreground">Total alokasi tagihan terjadwal</p>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-none border border-border p-3.5 gap-2 bg-card sm:p-5 sm:gap-3">
-            <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
-                Tagihan Terdekat
-              </CardTitle>
-              <div className="p-2 rounded-xl bg-muted/60 text-foreground">
-                <CalendarIcon className="size-4" />
-              </div>
-            </CardHeader>
-            <CardContent className="p-0 space-y-1">
-              <div className="text-lg font-bold tracking-tight truncate">
-                {nextClosestBill ? nextClosestBill.title : "Tidak ada"}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {nextClosestBill ? `${nextClosestBill.formattedDate} • ${fmt(nextClosestBill.amount)}` : "Semua lunas / kosong"}
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-none border border-border p-3.5 gap-2 bg-card sm:p-5 sm:gap-3">
-            <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
-                Auto-Sync Transaksi
-              </CardTitle>
-              <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600">
-                <Sparkles className="size-4" />
-              </div>
-            </CardHeader>
-            <CardContent className="p-0 space-y-1">
-              <div className="text-lg sm:text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">
-                Tersambung
-              </div>
-              <p className="text-xs text-muted-foreground">Otomatis masuk ke kalender & log transaksi</p>
-            </CardContent>
-          </Card>
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3">
+          <MetricCard
+            label="Tagihan belum dibayar"
+            value={`${pendingBills.length}`}
+            tone={pendingBills.length > 0 ? "warning" : "default"}
+            hint="bulan ini"
+          />
+          <MetricCard
+            label="Total nominal terjadwal"
+            value={fmt(totalPendingAmount)}
+            tone="negative"
+          />
+          <MetricCard
+            label="Tagihan terdekat"
+            value={nextClosestBill ? nextClosestBill.title : "Tidak ada"}
+            hint={
+              nextClosestBill
+                ? `${nextClosestBill.formattedDate} · ${fmt(nextClosestBill.amount)}`
+                : "semua lunas"
+            }
+            className="col-span-2 md:col-span-1"
+          />
         </div>
 
         {/* 2. Custom FullCalendar Component Integration */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-base font-semibold tracking-tight">Kalender Acara & Tagihan Terjadwal</h2>
+              <h2 className="text-base font-semibold">Kalender Acara & Tagihan Terjadwal</h2>
               <p className="text-xs text-muted-foreground">
                 Gunakan switcher untuk beralih antara Tampilan Bulanan (Month View) dan Mingguan (Week View)
               </p>

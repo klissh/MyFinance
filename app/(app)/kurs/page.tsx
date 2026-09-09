@@ -397,11 +397,11 @@ export default function KursPage() {
       </header>
 
       {/* Main Content */}
-      <div className="flex flex-1 flex-col gap-6 p-4 md:p-6 bg-background min-h-screen">
+      <div className="flex flex-1 flex-col gap-6 p-4 md:p-6 bg-background">
         {/* Toast Notification Banner */}
         {notification && (
-          <div className="flex items-center gap-3 p-4 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-800 dark:text-emerald-300 text-xs font-medium animate-in fade-in slide-in-from-top-2">
-            <CheckCircle2 className="size-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+          <div className="flex items-center gap-2.5 rounded-xl border border-border bg-card px-3.5 py-3 text-xs text-foreground shadow-sm animate-in fade-in slide-in-from-top-2">
+            <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
             <span>{notification}</span>
           </div>
         )}
@@ -417,7 +417,7 @@ export default function KursPage() {
         <div className="grid gap-4 md:grid-cols-4">
           <Card className="shadow-none border border-border p-5 gap-3 bg-card">
             <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
+              <CardTitle className="text-xs font-semibold text-muted-foreground">
                 🇲🇾 MYR ke IDR
               </CardTitle>
               <div className="p-2 rounded-xl bg-muted/60 text-foreground">
@@ -425,7 +425,7 @@ export default function KursPage() {
               </div>
             </CardHeader>
             <CardContent className="p-0 space-y-1">
-              <div className="text-2xl font-bold tracking-tight text-foreground">
+              <div className="text-2xl font-bold text-foreground">
                 Rp {getActiveRateInIDR("MYR").toLocaleString("id-ID", { maximumFractionDigits: 2 })}
               </div>
               <p className="text-xs text-muted-foreground">1 Ringgit Malaysia</p>
@@ -434,7 +434,7 @@ export default function KursPage() {
 
           <Card className="shadow-none border border-border p-5 gap-3 bg-card">
             <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
+              <CardTitle className="text-xs font-semibold text-muted-foreground">
                 🇺🇸 USD ke IDR
               </CardTitle>
               <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600">
@@ -442,7 +442,7 @@ export default function KursPage() {
               </div>
             </CardHeader>
             <CardContent className="p-0 space-y-1">
-              <div className="text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">
+              <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
                 Rp {getActiveRateInIDR("USD").toLocaleString("id-ID", { maximumFractionDigits: 2 })}
               </div>
               <p className="text-xs text-muted-foreground">1 Dolar Amerika</p>
@@ -451,7 +451,7 @@ export default function KursPage() {
 
           <Card className="shadow-none border border-border p-5 gap-3 bg-card">
             <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
+              <CardTitle className="text-xs font-semibold text-muted-foreground">
                 🇸🇬 SGD ke IDR
               </CardTitle>
               <div className="p-2 rounded-xl bg-muted/60 text-foreground">
@@ -459,7 +459,7 @@ export default function KursPage() {
               </div>
             </CardHeader>
             <CardContent className="p-0 space-y-1">
-              <div className="text-2xl font-bold tracking-tight text-foreground">
+              <div className="text-2xl font-bold text-foreground">
                 Rp {getActiveRateInIDR("SGD").toLocaleString("id-ID", { maximumFractionDigits: 2 })}
               </div>
               <p className="text-xs text-muted-foreground">1 Dolar Singapura</p>
@@ -468,7 +468,7 @@ export default function KursPage() {
 
           <Card className="shadow-none border border-border p-5 gap-3 bg-card">
             <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
+              <CardTitle className="text-xs font-semibold text-muted-foreground">
                 Status Perubahan Pasar
               </CardTitle>
               <div className="p-2 rounded-xl bg-muted/60 text-foreground">
@@ -476,7 +476,7 @@ export default function KursPage() {
               </div>
             </CardHeader>
             <CardContent className="p-0 space-y-1">
-              <div className="text-2xl font-bold tracking-tight flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+              <div className="text-2xl font-bold flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
                 <span className={`size-2 rounded-full ${hasRateChangedRecently ? "bg-emerald-500 animate-ping" : "bg-emerald-500"}`}></span>
                 <span>{hasRateChangedRecently ? "Kurs Berubah" : "Harga Stabil"}</span>
               </div>
@@ -721,7 +721,7 @@ export default function KursPage() {
                 <div className="sm:col-span-5 space-y-1.5">
                   <label className="text-xs font-semibold text-muted-foreground">Hasil Konversi</label>
                   <div className="flex items-center gap-2">
-                    <div className="w-full h-9 px-3 rounded-md border border-input bg-muted/40 flex items-center text-sm font-extrabold text-emerald-600 dark:text-emerald-400 truncate">
+                    <div className="w-full h-9 px-3 rounded-md border border-input bg-muted/40 flex items-center text-sm font-semibold text-emerald-600 dark:text-emerald-400 truncate">
                       {convertedResult.toLocaleString("id-ID", { maximumFractionDigits: 2 })}
                     </div>
                     <Select value={toCurrency} onValueChange={setToCurrency}>

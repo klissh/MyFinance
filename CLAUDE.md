@@ -290,6 +290,24 @@ hardcoded `Bank BCA / Mandiri / Tunai / GoPay` — tidak nyambung ke akun asli, 
   kanan; highlight `bg-accent`.
 - `max-h` panel dibatasi 20rem (dulu setinggi layar).
 
+## Ronde 11 (2026-09-10) — kurangi kebisingan visual
+
+Keluhan: layout "bikin pusing / susah dibaca". Sumbernya: 6-7 ukuran font
+bercampur, warna di mana-mana (tiap kategori/status pill beda warna, kotak ikon
+warna-warni di kartu metrik), `font-extrabold`/`tracking-tight` berlebihan.
+
+- **`components/ui/metric-card.tsx`** (baru) — `<MetricCard label value hint? tone?
+  progress? />`. Satu skala tipe: label `text-xs` muted, angka `text-lg sm:text-xl
+  font-semibold`, satu baris konteks opsional. Warna HANYA di angka & hanya kalau
+  bermakna (`tone` positive/negative/warning). Tidak ada kotak ikon warna.
+  Menggantikan ~25 kartu metrik copy-paste di 7 halaman (transaksi/finance/dashboard/
+  goals/scheduled/kamar-kos/kebutuhan). Grid metrik semua `grid-cols-2` di mobile.
+  Kartu "Auto-Sync / Tersambung" (hiasan) di `/scheduled` dibuang.
+- **Toast notifikasi**: dulu blok hijau besar di tiap halaman → kartu netral
+  `bg-card border` + centang hijau kecil.
+- Global di semua `app/(app)/*/page.tsx`: hapus `tracking-tight`,
+  `font-extrabold`→`font-semibold`, hapus `min-h-screen` dari div konten.
+
 ## Yang TIDAK perlu dikerjakan otomatis
 
 - Migrasi data dari Bizmo ke MSU — menunggu tindakan manusia (pemilik Bizmo invite member, atau ekspor file manual).

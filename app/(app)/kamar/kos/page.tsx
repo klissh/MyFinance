@@ -17,7 +17,6 @@ import {
   Card,
   CardContent,
   CardDescription,
-  CardHeader,
   CardTitle,
 } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -64,12 +63,11 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { ListCard, ListCardHead, ListCardMeta } from "@/components/ui/list-card"
+import { MetricCard } from "@/components/ui/metric-card"
 import { Spinner } from "@/components/ui/spinner"
 import {
   Plus,
   CheckCircle2,
-  TrendingUp,
-  TrendingDown,
   Receipt,
   Search,
   ArrowRight,
@@ -440,69 +438,35 @@ export default function TransaksiKosPage() {
       </header>
 
       {/* Main Content */}
-      <div className="flex flex-1 flex-col gap-6 p-4 md:p-6 bg-background min-h-screen min-w-0 max-w-full">
+      <div className="flex flex-1 flex-col gap-6 p-4 md:p-6 bg-background min-w-0 max-w-full">
         {/* Toast Notification Banner */}
         {notification && (
-          <div className="flex items-center gap-3 p-4 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-800 dark:text-emerald-300 text-xs font-medium animate-in fade-in slide-in-from-top-2">
-            <CheckCircle2 className="size-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+          <div className="flex items-center gap-2.5 rounded-xl border border-border bg-card px-3.5 py-3 text-xs text-foreground shadow-sm animate-in fade-in slide-in-from-top-2">
+            <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
             <span>{notification}</span>
           </div>
         )}
 
-        {/* 1. Summary Metric Cards (Clean 3-Column Grid) */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3">
-          <Card className="shadow-none border border-border p-3.5 gap-2 bg-card sm:p-5 sm:gap-3">
-            <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
-                Tunggakan / Tagihan Saya
-              </CardTitle>
-              <div className="p-2 rounded-xl bg-rose-500/10 text-rose-600">
-                <TrendingDown className="size-4" />
-              </div>
-            </CardHeader>
-            <CardContent className="p-0 space-y-1">
-              <div className="text-lg sm:text-2xl font-bold tracking-tight text-rose-600 dark:text-rose-400">
-                {fmt(totalMyOwed)}
-              </div>
-              <p className="text-xs text-muted-foreground">Harus dibayar ke penghuni lain</p>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-none border border-border p-3.5 gap-2 bg-card sm:p-5 sm:gap-3">
-            <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
-                Piutang Saya (Ditalangi Saya)
-              </CardTitle>
-              <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600">
-                <TrendingUp className="size-4" />
-              </div>
-            </CardHeader>
-            <CardContent className="p-0 space-y-1">
-              <div className="text-lg sm:text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">
-                +{fmt(totalOthersOweMe)}
-              </div>
-              <p className="text-xs text-muted-foreground">Penghuni lain utang ke saya</p>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-none border border-border p-3.5 gap-2 bg-card sm:p-5 sm:gap-3">
-            <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
-                Bagian Saya (Bulan Ini)
-              </CardTitle>
-              <div className="p-2 rounded-xl bg-muted/60 text-foreground">
-                <Receipt className="size-4" />
-              </div>
-            </CardHeader>
-            <CardContent className="p-0 space-y-1">
-              <div className="text-lg sm:text-2xl font-bold tracking-tight">
-                {fmt(totalMyShareMonth)}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                dari total belanja bersama {fmt(totalKosTransactionsMonth)} ({transactions.length} transaksi)
-              </p>
-            </CardContent>
-          </Card>
+        {/* 1. Summary Metric Cards */}
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3">
+          <MetricCard
+            label="Tunggakan saya"
+            value={fmt(totalMyOwed)}
+            tone={totalMyOwed > 0 ? "negative" : "default"}
+            hint="ke penghuni lain"
+          />
+          <MetricCard
+            label="Piutang saya"
+            value={`+${fmt(totalOthersOweMe)}`}
+            tone={totalOthersOweMe > 0 ? "positive" : "default"}
+            hint="ditalangi saya"
+          />
+          <MetricCard
+            label="Bagian saya bulan ini"
+            value={fmt(totalMyShareMonth)}
+            hint={`dari belanja bersama ${fmt(totalKosTransactionsMonth)}`}
+            className="col-span-2 md:col-span-1"
+          />
         </div>
 
         {/* 2. Main Shared Transactions Table Section (With Action Button, Filters & Pagination) */}

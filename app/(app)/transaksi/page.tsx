@@ -80,15 +80,13 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { ListCard, ListCardHead, ListCardMeta } from "@/components/ui/list-card"
+import { MetricCard } from "@/components/ui/metric-card"
 import { Spinner } from "@/components/ui/spinner"
 import {
   Plus,
   Search,
   CheckCircle2,
   Calendar as CalendarIcon,
-  Wallet,
-  ArrowUpRight,
-  ArrowDownLeft,
   Pencil,
   Trash2,
   Lock,
@@ -344,69 +342,33 @@ export default function TransaksiPage() {
       </header>
 
       {/* Main Content */}
-      <div className="flex flex-1 flex-col gap-6 p-4 md:p-6 bg-background min-h-screen">
+      <div className="flex flex-1 flex-col gap-6 p-4 md:p-6 bg-background">
         {/* Toast Notification Banner */}
         {notification && (
-          <div className="flex items-center gap-3 p-4 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-800 dark:text-emerald-300 text-xs font-medium animate-in fade-in slide-in-from-top-2">
-            <CheckCircle2 className="size-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+          <div className="flex items-center gap-2.5 rounded-xl border border-border bg-card px-3.5 py-3 text-xs text-foreground shadow-sm animate-in fade-in slide-in-from-top-2">
+            <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
             <span>{notification}</span>
           </div>
         )}
 
         {/* 1. Summary Metric Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3">
-          <Card className="shadow-none border border-border p-3.5 gap-2 bg-card sm:p-5 sm:gap-3">
-            <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
-                Total Pemasukan (Filter)
-              </CardTitle>
-              <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600">
-                <ArrowDownLeft className="size-4" />
-              </div>
-            </CardHeader>
-            <CardContent className="p-0 space-y-1">
-              <div className="text-lg sm:text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">
-                +{fmt(totalIncome)}
-              </div>
-              <p className="text-xs text-muted-foreground">Total pemasukan tercatat</p>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-none border border-border p-3.5 gap-2 bg-card sm:p-5 sm:gap-3">
-            <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
-                Total Pengeluaran (Filter)
-              </CardTitle>
-              <div className="p-2 rounded-xl bg-rose-500/10 text-rose-600">
-                <ArrowUpRight className="size-4" />
-              </div>
-            </CardHeader>
-            <CardContent className="p-0 space-y-1">
-              <div className="text-lg sm:text-2xl font-bold tracking-tight text-rose-600 dark:text-rose-400">
-                -{fmt(totalExpense)}
-              </div>
-              <p className="text-xs text-muted-foreground">Total pengeluaran tercatat</p>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-none border border-border p-3.5 gap-2 bg-card sm:p-5 sm:gap-3">
-            <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
-                Bersih Arus Kas (Net)
-              </CardTitle>
-              <div className="p-2 rounded-xl bg-muted/60 text-foreground">
-                <Wallet className="size-4" />
-              </div>
-            </CardHeader>
-            <CardContent className="p-0 space-y-1">
-              <div className={`text-lg sm:text-2xl font-bold tracking-tight ${
-                totalIncome - totalExpense >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
-              }`}>
-                {fmt(totalIncome - totalExpense)}
-              </div>
-              <p className="text-xs text-muted-foreground">Arus kas bersih periode ini</p>
-            </CardContent>
-          </Card>
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3">
+          <MetricCard
+            label="Pemasukan (filter)"
+            value={`+${fmt(totalIncome)}`}
+            tone="positive"
+          />
+          <MetricCard
+            label="Pengeluaran (filter)"
+            value={`-${fmt(totalExpense)}`}
+            tone="negative"
+          />
+          <MetricCard
+            label="Arus kas bersih"
+            value={fmt(totalIncome - totalExpense)}
+            tone={totalIncome - totalExpense >= 0 ? "positive" : "negative"}
+            className="col-span-2 md:col-span-1"
+          />
         </div>
 
         {/* 2. Filter Controls Card */}

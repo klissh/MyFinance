@@ -202,7 +202,7 @@ export default function AnggotaKosPage() {
 
   if (!isLoading && !activeRoom) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center p-8 bg-background min-h-screen">
+      <div className="flex flex-1 flex-col items-center justify-center p-8 bg-background">
         <Card className="max-w-md w-full p-8 text-center border border-border shadow-none bg-card space-y-4">
           <Users className="size-12 text-muted-foreground mx-auto" />
           <div className="space-y-1.5">
@@ -266,11 +266,11 @@ export default function AnggotaKosPage() {
       </header>
 
       {/* Main Content */}
-      <div className="flex flex-1 flex-col gap-6 p-4 md:p-6 bg-background min-h-screen min-w-0 max-w-full">
+      <div className="flex flex-1 flex-col gap-6 p-4 md:p-6 bg-background min-w-0 max-w-full">
         {/* Toast Notification Banner */}
         {notification && (
-          <div className="flex items-center gap-3 p-4 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-800 dark:text-emerald-300 text-xs font-medium animate-in fade-in slide-in-from-top-2">
-            <CheckCircle2 className="size-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+          <div className="flex items-center gap-2.5 rounded-xl border border-border bg-card px-3.5 py-3 text-xs text-foreground shadow-sm animate-in fade-in slide-in-from-top-2">
+            <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
             <span>{notification}</span>
           </div>
         )}
@@ -279,7 +279,7 @@ export default function AnggotaKosPage() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-5 rounded-xl border border-border bg-card shadow-none">
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-base font-semibold tracking-tight text-foreground">
+              <h1 className="text-base font-semibold text-foreground">
                 {activeRoom?.name || "Kamar Kos Bersama"}
               </h1>
               <Badge variant="outline" className="text-xs font-normal border-border">
@@ -521,7 +521,7 @@ export default function AnggotaKosPage() {
                     </div>
 
                     <div className="text-right space-y-1">
-                      <div className="font-extrabold text-sm text-foreground">
+                      <div className="font-semibold text-sm text-foreground">
                         {fmt(item.amount)}
                       </div>
                       <Badge variant="outline" className="text-[10px] font-semibold border-border">

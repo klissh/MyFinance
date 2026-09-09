@@ -41,9 +41,6 @@ import {
   FinancialAccountRecord,
 } from "@/lib/db"
 import {
-  Wallet,
-  TrendingUp,
-  TrendingDown,
   PiggyBank,
   ArrowUpRight,
   Plus,
@@ -53,9 +50,10 @@ import {
   Globe,
   Inbox,
 } from "lucide-react"
+import { MetricCard } from "@/components/ui/metric-card"
 
 export default function DashboardPage() {
-  const { fmt, symbol, currency } = useMoney()
+  const { fmt, currency } = useMoney()
   // MYR to IDR Live Rate Converter State
   const [myrInput, setMyrInput] = useState<number | string>(100)
   const [rateMYRtoIDR, setRateMYRtoIDR] = useState<number>(4403.0) // fallback sampai API menjawab
@@ -121,36 +119,34 @@ export default function DashboardPage() {
   )
 
   // Summary Metrics Data
-  const metrics = [
+  const metrics: {
+    title: string
+    amount: string
+    hint?: string
+    tone?: "default" | "positive" | "negative" | "warning"
+    progress?: number
+  }[] = [
     {
-      title: "Sisa Anggaran Bulanan",
-      amount: `${fmt(remainingBudget)}`,
-      subtext: totalIncome > 0 ? `Bebas alokasi dari total ${fmt(totalIncome)}` : "Belum ada pemasukan / anggaran",
+      title: "Sisa anggaran bulan ini",
+      amount: fmt(remainingBudget),
+      hint: totalIncome > 0 ? `dari total pemasukan ${fmt(totalIncome)}` : "belum ada pemasukan",
       progress: budgetProgress,
-      icon: <Wallet className="size-4 text-foreground" />,
-      badge: totalIncome > 0 ? `${budgetProgress}% Sisa` : `${symbol} 0`,
     },
     {
-      title: "Pemasukan (Bulan Ini)",
-      amount: `${fmt(totalIncome)}`,
-      subtext: totalIncome > 0 ? "Total pemasukan tercatat" : "Belum ada pemasukan",
-      icon: <TrendingUp className="size-4 text-emerald-600 dark:text-emerald-400" />,
-      badge: totalIncome > 0 ? "Masuk" : `${symbol} 0`,
+      title: "Pemasukan bulan ini",
+      amount: `+${fmt(totalIncome)}`,
+      tone: "positive",
     },
     {
-      title: "Pengeluaran (Bulan Ini)",
-      amount: `${fmt(totalExpense)}`,
-      subtext: totalExpense > 0 ? "Total pengeluaran tercatat" : "Belum ada pengeluaran",
-      icon: <TrendingDown className="size-4 text-rose-600 dark:text-rose-400" />,
-      badge: totalExpense > 0 ? "Tercatat" : `${symbol} 0`,
+      title: "Pengeluaran bulan ini",
+      amount: `-${fmt(totalExpense)}`,
+      tone: "negative",
     },
     {
-      title: "Total Uang Ketabung",
-      amount: `${fmt(totalSaved)}`,
-      subtext: totalGoalTarget > 0 ? `Target ${fmt(totalGoalTarget)}` : "Belum ada target",
+      title: "Total uang ketabung",
+      amount: fmt(totalSaved),
+      hint: totalGoalTarget > 0 ? `target ${fmt(totalGoalTarget)}` : "belum ada target",
       progress: savedProgress,
-      icon: <PiggyBank className="size-4 text-foreground" />,
-      badge: `${savedProgress}% Target`,
     },
   ]
 
@@ -178,33 +174,18 @@ export default function DashboardPage() {
       </header>
 
       {/* Main Content */}
-      <div className="flex flex-1 flex-col gap-6 p-4 md:p-6 bg-background min-h-screen">
+      <div className="flex flex-1 flex-col gap-6 p-4 md:p-6 bg-background">
         {/* 1. Summary Metric Cards */}
         <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
           {metrics.map((m, idx) => (
-            <Card key={idx} className="shadow-none border border-border p-3.5 gap-2 bg-card sm:p-5 sm:gap-3">
-              <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
-                <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
-                  {m.title}
-                </CardTitle>
-                <div className="p-2 rounded-xl bg-muted/60 flex items-center justify-center shrink-0">
-                  {m.icon}
-                </div>
-              </CardHeader>
-
-              <CardContent className="p-0 space-y-1.5">
-                <div className="flex items-baseline justify-between gap-1">
-                  <div className="text-lg sm:text-2xl font-bold tracking-tight text-foreground truncate">{m.amount}</div>
-                  <Badge variant="outline" className="text-[11px] font-normal border-border">
-                    {m.badge}
-                  </Badge>
-                </div>
-                <p className="text-xs text-muted-foreground">{m.subtext}</p>
-                {m.progress !== undefined && (
-                  <Progress value={m.progress} className="h-1.5 mt-2" />
-                )}
-              </CardContent>
-            </Card>
+            <MetricCard
+              key={idx}
+              label={m.title}
+              value={m.amount}
+              hint={m.hint}
+              tone={m.tone}
+              progress={m.progress}
+            />
           ))}
         </div>
 
@@ -395,7 +376,7 @@ export default function DashboardPage() {
                         <div className="text-xs font-bold text-foreground">{acc.name}</div>
                         <div className="text-[11px] text-muted-foreground">{acc.type}</div>
                       </div>
-                      <div className="text-xs font-extrabold text-foreground">
+                      <div className="text-xs font-semibold text-foreground">
                         {fmt(acc.balance)}
                       </div>
                     </div>
@@ -479,7 +460,7 @@ export default function DashboardPage() {
 
                 <div className="p-3 rounded-xl border border-border bg-muted/40 space-y-1">
                   <div className="text-[11px] text-muted-foreground">Hasil Konversi:</div>
-                  <div className="text-lg font-extrabold text-emerald-600 dark:text-emerald-400">
+                  <div className="text-lg font-semibold text-emerald-600 dark:text-emerald-400">
                     {currency === "MYR"
                       ? formatMoney((Number(myrInput) || 0) / (rateMYRtoIDR || 1), "MYR")
                       : formatMoney((Number(myrInput) || 0) * rateMYRtoIDR, "IDR")}

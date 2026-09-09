@@ -64,15 +64,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { MetricCard } from "@/components/ui/metric-card"
 import { Spinner } from "@/components/ui/spinner"
 import {
   Receipt,
   Plus,
   CheckCircle2,
   ArrowRight,
-  Clock,
-  Wallet,
-  Check,
   Search,
   LayoutGrid,
   List,
@@ -394,84 +392,37 @@ export default function KebutuhanBulananKosPage() {
       </header>
 
       {/* Main Content */}
-      <div className="flex flex-1 flex-col gap-6 p-4 md:p-6 bg-background min-h-screen min-w-0 max-w-full">
+      <div className="flex flex-1 flex-col gap-6 p-4 md:p-6 bg-background min-w-0 max-w-full">
         {/* Toast Notification Banner */}
         {notification && (
-          <div className="flex items-center gap-3 p-4 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-800 dark:text-emerald-300 text-xs font-medium animate-in fade-in slide-in-from-top-2">
-            <CheckCircle2 className="size-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+          <div className="flex items-center gap-2.5 rounded-xl border border-border bg-card px-3.5 py-3 text-xs text-foreground shadow-sm animate-in fade-in slide-in-from-top-2">
+            <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
             <span>{notification}</span>
           </div>
         )}
 
         {/* 1. Summary Metric Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-          <Card className="shadow-none border border-border p-3.5 gap-2 bg-card sm:p-5 sm:gap-3">
-            <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
-                Total Kebutuhan Kos (100%)
-              </CardTitle>
-              <div className="p-2 rounded-xl bg-muted/60 text-foreground">
-                <Receipt className="size-4" />
-              </div>
-            </CardHeader>
-            <CardContent className="p-0 space-y-1">
-              <div className="text-lg sm:text-2xl font-bold tracking-tight text-foreground">
-                {fmt(totalKosRequirements)}
-              </div>
-              <p className="text-xs text-muted-foreground">Total pengeluaran rutin bersama</p>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-none border border-border p-3.5 gap-2 bg-card sm:p-5 sm:gap-3">
-            <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
-                Total Beban Saya / Bulan
-              </CardTitle>
-              <div className="p-2 rounded-xl bg-primary/10 text-primary">
-                <Wallet className="size-4" />
-              </div>
-            </CardHeader>
-            <CardContent className="p-0 space-y-1">
-              <div className="text-lg sm:text-2xl font-bold tracking-tight text-foreground">
-                {fmt(totalMyMonthlyShare)}
-              </div>
-              <p className="text-xs text-muted-foreground">Proporsi bagian Anda ({membersCount} orang)</p>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-none border border-border p-3.5 gap-2 bg-card sm:p-5 sm:gap-3">
-            <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
-                Sudah Dibayar Saya
-              </CardTitle>
-              <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600">
-                <Check className="size-4" />
-              </div>
-            </CardHeader>
-            <CardContent className="p-0 space-y-1">
-              <div className="text-lg sm:text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">
-                {fmt(totalMyPaidShare)}
-              </div>
-              <p className="text-xs text-muted-foreground">Telah terpotong di log pribadi</p>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-none border border-border p-3.5 gap-2 bg-card sm:p-5 sm:gap-3">
-            <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
-                Sisa Bagian Belum Bayar
-              </CardTitle>
-              <div className="p-2 rounded-xl bg-amber-500/10 text-amber-600">
-                <Clock className="size-4" />
-              </div>
-            </CardHeader>
-            <CardContent className="p-0 space-y-1">
-              <div className="text-lg sm:text-2xl font-bold tracking-tight text-amber-600 dark:text-amber-400">
-                {fmt(totalMyPendingShare)}
-              </div>
-              <p className="text-xs text-muted-foreground">Sisa iuran rutin Anda bulan ini</p>
-            </CardContent>
-          </Card>
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+          <MetricCard
+            label="Total kebutuhan kos"
+            value={fmt(totalKosRequirements)}
+            hint="pengeluaran rutin bersama"
+          />
+          <MetricCard
+            label="Beban saya / bulan"
+            value={fmt(totalMyMonthlyShare)}
+            hint={`bagian ${membersCount} orang`}
+          />
+          <MetricCard
+            label="Sudah dibayar saya"
+            value={fmt(totalMyPaidShare)}
+            tone="positive"
+          />
+          <MetricCard
+            label="Sisa belum bayar"
+            value={fmt(totalMyPendingShare)}
+            tone={totalMyPendingShare > 0 ? "warning" : "default"}
+          />
         </div>
 
         {/* 2. Main Section: Table / Grid View of Requirements */}
@@ -736,7 +687,7 @@ export default function KebutuhanBulananKosPage() {
                           <TableCell className="px-3.5 py-3 text-xs text-muted-foreground whitespace-nowrap">
                             {r.splitPeopleCount} Orang
                           </TableCell>
-                          <TableCell className="px-3.5 py-3 font-extrabold text-xs text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
+                          <TableCell className="px-3.5 py-3 font-semibold text-xs text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
                             {fmt(r.perPersonPrice)}
                           </TableCell>
                           <TableCell className="px-3.5 py-3 whitespace-nowrap">

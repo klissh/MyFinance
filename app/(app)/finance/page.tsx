@@ -59,10 +59,9 @@ import {
 } from "@/components/ui/alert-dialog"
 import { CreditCard } from "@/components/shared-assets/credit-card/credit-card"
 import { ListCard, ListCardHead, ListCardMeta } from "@/components/ui/list-card"
+import { MetricCard } from "@/components/ui/metric-card"
 import {
   Wallet,
-  Building2,
-  CreditCard as CreditCardIcon,
   Plus,
   ArrowLeftRight,
   CheckCircle2,
@@ -596,76 +595,40 @@ export default function FinancePage() {
       </header>
 
       {/* Main Content */}
-      <div className="flex flex-1 flex-col gap-6 p-4 md:p-6 bg-background min-h-screen">
+      <div className="flex flex-1 flex-col gap-6 p-4 md:p-6 bg-background">
         {/* Toast Notification Banner */}
         {notification && (
-          <div className="flex items-center gap-3 p-4 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-800 dark:text-emerald-300 text-xs font-medium animate-in fade-in slide-in-from-top-2">
-            <CheckCircle2 className="size-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+          <div className="flex items-center gap-2.5 rounded-xl border border-border bg-card px-3.5 py-3 text-xs text-foreground shadow-sm animate-in fade-in slide-in-from-top-2">
+            <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
             <span>{notification}</span>
           </div>
         )}
 
         {/* 1. Metric Summary Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3">
-          <Card className="shadow-none border border-border p-3.5 gap-2 bg-card sm:p-5 sm:gap-3">
-            <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
-                Total Saldo Keseluruhan
-              </CardTitle>
-              <div className="p-2 rounded-xl bg-muted/60 text-foreground">
-                <Wallet className="size-4" />
-              </div>
-            </CardHeader>
-            <CardContent className="p-0 space-y-1">
-              <div className="text-lg sm:text-2xl font-bold tracking-tight">
-                {fmt(totalBalance)}
-              </div>
-              <p className="text-xs text-muted-foreground">Tersimpan di {totalAccountsCount} akun aktif</p>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-none border border-border p-3.5 gap-2 bg-card sm:p-5 sm:gap-3">
-            <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
-                Jumlah Akun Terdaftar
-              </CardTitle>
-              <div className="p-2 rounded-xl bg-muted/60 text-foreground">
-                <Building2 className="size-4" />
-              </div>
-            </CardHeader>
-            <CardContent className="p-0 space-y-1">
-              <div className="text-lg sm:text-2xl font-bold tracking-tight">
-                {totalAccountsCount} Akun Active
-              </div>
-              <p className="text-xs text-muted-foreground">Bank, Cash, dan E-Wallet</p>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-none border border-border p-3.5 gap-2 bg-card sm:p-5 sm:gap-3">
-            <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
-                Alokasi Saldo Terbesar
-              </CardTitle>
-              <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600">
-                <CreditCardIcon className="size-4" />
-              </div>
-            </CardHeader>
-            <CardContent className="p-0 space-y-1">
-              <div className="text-lg sm:text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400 break-words">
-                {topAccount ? `${topAccount.name} (${topPct}%)` : "Belum ada"}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {topAccount ? `${fmt(topAccount.balance)} saldo aktif` : "Belum ada akun"}
-              </p>
-            </CardContent>
-          </Card>
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3">
+          <MetricCard
+            label="Total saldo"
+            value={fmt(totalBalance)}
+            hint={`${totalAccountsCount} akun aktif`}
+          />
+          <MetricCard
+            label="Jumlah akun"
+            value={String(totalAccountsCount)}
+            hint="Bank, tunai & e-wallet"
+          />
+          <MetricCard
+            label="Alokasi terbesar"
+            value={topAccount ? `${topAccount.name} · ${topPct}%` : "Belum ada"}
+            hint={topAccount ? fmt(topAccount.balance) : "Belum ada akun"}
+            className="col-span-2 md:col-span-1"
+          />
         </div>
 
         {/* 2. Visual Credit Card Component Grid Section */}
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-base font-semibold tracking-tight">Kartu & Akun Sumber Dana</h2>
+              <h2 className="text-base font-semibold">Kartu & Akun Sumber Dana</h2>
               <p className="text-xs text-muted-foreground">
                 Daftar kartu digital dan dompet keuangan aktif Anda
               </p>
@@ -709,7 +672,7 @@ export default function FinancePage() {
                       <Badge variant="outline" className="text-[10px] font-normal border-border">
                         {acc.type}
                       </Badge>
-                      <div className="text-sm font-extrabold text-emerald-600 dark:text-emerald-400">
+                      <div className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
                         {fmt(acc.balance)}
                       </div>
                     </div>
@@ -823,7 +786,7 @@ export default function FinancePage() {
                           <div className="mt-0.5 text-[11px] font-medium text-muted-foreground">{m.accountName}</div>
                         </div>
                         <div
-                          className={`shrink-0 text-sm font-extrabold ${
+                          className={`shrink-0 text-sm font-semibold ${
                             m.type === "in"
                               ? "text-emerald-600 dark:text-emerald-400"
                               : m.type === "out"
@@ -888,7 +851,7 @@ export default function FinancePage() {
                           </TableCell>
                           <TableCell className="px-5 py-3.5 text-xs text-muted-foreground">{m.date}</TableCell>
                           <TableCell
-                            className={`px-5 py-3.5 text-right text-xs font-extrabold ${
+                            className={`px-5 py-3.5 text-right text-xs font-semibold ${
                               m.type === "in"
                                 ? "text-emerald-600 dark:text-emerald-400"
                                 : m.type === "out"
