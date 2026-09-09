@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured } from "./supabase"
+import { normalizeCardNetwork, type CardNetwork } from "./card-networks"
 
 // Data Types
 export interface UserSession {
@@ -18,6 +19,7 @@ export interface FinancialAccountRecord {
   cardHolder: string
   expiration: string
   cardDesignType: "brand-dark" | "transparent-gradient" | "salmon-strip" | "gray-dark" | "brand-light" | "gray-light"
+  cardNetwork: CardNetwork
 }
 
 export interface TransactionRecord {
@@ -501,6 +503,7 @@ export const accountService = {
               cardHolder: meta?.cardHolder || currentUser.fullName || "USER",
               expiration: meta?.expiration || "12/29",
               cardDesignType: (a.color as FinancialAccountRecord["cardDesignType"]) || "brand-dark",
+              cardNetwork: normalizeCardNetwork(a.card_network),
             }
           })
           if (typeof window !== "undefined") {
@@ -544,6 +547,7 @@ export const accountService = {
               type: item.type,
               balance: item.balance,
               color: item.cardDesignType,
+              card_network: item.cardNetwork,
             },
           ])
           .select()
@@ -560,6 +564,7 @@ export const accountService = {
             cardHolder: item.cardHolder,
             expiration: item.expiration,
             cardDesignType: (data.color as FinancialAccountRecord["cardDesignType"]) || item.cardDesignType,
+            cardNetwork: data.card_network ? normalizeCardNetwork(data.card_network) : item.cardNetwork,
           }
         } else if (error) {
           console.error("Supabase account insert error:", error)
@@ -630,7 +635,7 @@ export const accountService = {
     id: string,
     patch: Partial<Pick<
       FinancialAccountRecord,
-      "name" | "type" | "balance" | "cardNumber" | "cardHolder" | "expiration" | "cardDesignType"
+      "name" | "type" | "balance" | "cardNumber" | "cardHolder" | "expiration" | "cardDesignType" | "cardNetwork"
     >>,
   ): Promise<void> {
     const list = await this.getAll()
@@ -644,6 +649,7 @@ export const accountService = {
         if (patch.type !== undefined) upd.type = patch.type
         if (patch.balance !== undefined) upd.balance = patch.balance
         if (patch.cardDesignType !== undefined) upd.color = patch.cardDesignType
+        if (patch.cardNetwork !== undefined) upd.card_network = patch.cardNetwork
         if (Object.keys(upd).length) {
           await supabase.from("accounts").update(upd).eq("id", id)
         }

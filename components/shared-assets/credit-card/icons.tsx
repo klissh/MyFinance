@@ -1,6 +1,9 @@
 "use client";
 
 import type { SVGProps } from "react";
+import type { CardNetwork } from "@/lib/card-networks";
+
+type NetworkIconProps = SVGProps<SVGSVGElement> & { variant?: "light" | "dark" };
 
 export const PaypassIcon = (props: SVGProps<SVGSVGElement>) => {
     return (
@@ -72,4 +75,133 @@ export const MastercardIcon = (props: SVGProps<SVGSVGElement>) => {
             />
         </svg>
     );
+};
+
+// ── Jaringan / jenis kartu ────────────────────────────────────────────────────
+// Tanda merek sederhana (bentuk geometris / teks), bukan reproduksi logo asli.
+
+const SANS = "system-ui, -apple-system, 'Segoe UI', Arial, sans-serif";
+
+export const VisaIcon = ({ variant = "dark", ...props }: NetworkIconProps) => (
+    <svg width="38" height="14" viewBox="0 0 48 18" fill="none" {...props}>
+        <text
+            x="24"
+            y="15"
+            textAnchor="middle"
+            fontFamily={SANS}
+            fontSize="17"
+            fontWeight="800"
+            fontStyle="italic"
+            letterSpacing="1"
+            fill={variant === "light" ? "#1434CB" : "#ffffff"}
+        >
+            VISA
+        </text>
+    </svg>
+);
+
+export const AmexIcon = (props: SVGProps<SVGSVGElement>) => (
+    <svg width="33" height="20" viewBox="0 0 44 26" fill="none" {...props}>
+        <rect width="44" height="26" rx="3.5" fill="#1F72CD" />
+        <text
+            x="22"
+            y="17.5"
+            textAnchor="middle"
+            fontFamily={SANS}
+            fontSize="10"
+            fontWeight="800"
+            letterSpacing="1"
+            fill="#ffffff"
+        >
+            AMEX
+        </text>
+    </svg>
+);
+
+export const UnionPayIcon = (props: SVGProps<SVGSVGElement>) => (
+    <svg width="33" height="19" viewBox="0 0 46 26" fill="none" {...props}>
+        <path d="M4 0h13a3 3 0 0 1 3 3v20a3 3 0 0 1-3 3H4a3 3 0 0 1-3-3V3a3 3 0 0 1 3-3Z" fill="#E21836" />
+        <rect x="16.5" width="13" height="26" fill="#00447C" />
+        <path d="M29 0h13a3 3 0 0 1 3 3v20a3 3 0 0 1-3 3H29a3 3 0 0 1-3-3V3a3 3 0 0 1 3-3Z" fill="#007B84" />
+        <text
+            x="23"
+            y="17"
+            textAnchor="middle"
+            fontFamily={SANS}
+            fontSize="9"
+            fontWeight="800"
+            fill="#ffffff"
+        >
+            UP
+        </text>
+    </svg>
+);
+
+export const JcbIcon = (props: SVGProps<SVGSVGElement>) => (
+    <svg width="33" height="19" viewBox="0 0 46 26" fill="none" {...props}>
+        {[
+            { x: 0, fill: "#0F4C97", label: "J" },
+            { x: 16, fill: "#BE0027", label: "C" },
+            { x: 32, fill: "#1C7B3F", label: "B" },
+        ].map((seg) => (
+            <g key={seg.label}>
+                <rect x={seg.x} width="14" height="26" rx="3" fill={seg.fill} />
+                <text
+                    x={seg.x + 7}
+                    y="17.5"
+                    textAnchor="middle"
+                    fontFamily={SANS}
+                    fontSize="10"
+                    fontWeight="800"
+                    fill="#ffffff"
+                >
+                    {seg.label}
+                </text>
+            </g>
+        ))}
+    </svg>
+);
+
+export const GenericCardIcon = ({ variant = "dark", ...props }: NetworkIconProps) => {
+    const stroke = variant === "light" ? "#0f172a" : "#ffffff";
+    return (
+        <svg width="28" height="20" viewBox="0 0 34 24" fill="none" {...props}>
+            <rect x="1.25" y="1.25" width="31.5" height="21.5" rx="3.5" stroke={stroke} strokeOpacity="0.75" strokeWidth="1.5" />
+            <path d="M10 1.5v21M24 1.5v21M1.5 8.5h31M1.5 15.5h31" stroke={stroke} strokeOpacity="0.35" strokeWidth="1" />
+        </svg>
+    );
+};
+
+/** Logo jaringan kartu untuk pojok kanan-bawah kartu. `variant` = tema kartu
+ *  ("dark" → logo terang, "light" → logo gelap). Mengembalikan null utk "none". */
+export const NetworkLogo = ({
+    network,
+    variant,
+    className,
+}: {
+    network: CardNetwork;
+    variant: "light" | "dark";
+    className?: string;
+}) => {
+    switch (network) {
+        case "visa":
+            return <VisaIcon variant={variant} className={className} />;
+        case "mastercard":
+            return variant === "light" ? (
+                <MastercardIcon className={className} />
+            ) : (
+                <MastercardIconWhite className={className} />
+            );
+        case "amex":
+            return <AmexIcon className={className} />;
+        case "unionpay":
+            return <UnionPayIcon className={className} />;
+        case "jcb":
+            return <JcbIcon className={className} />;
+        case "other":
+            return <GenericCardIcon variant={variant} className={className} />;
+        case "none":
+        default:
+            return null;
+    }
 };

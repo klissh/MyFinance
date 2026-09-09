@@ -1,6 +1,7 @@
 "use client"
 
 import { useMoney } from "@/lib/currency"
+import { CARD_NETWORKS, type CardNetwork } from "@/lib/card-networks"
 import React, { useState, useEffect } from "react"
 import {
   Breadcrumb,
@@ -120,6 +121,7 @@ export default function FinancePage() {
     () => authService.getCurrentUser()?.fullName ?? "",
   )
   const [newAccDesign, setNewAccDesign] = useState<FinancialAccountRecord["cardDesignType"]>("brand-dark")
+  const [newAccNetwork, setNewAccNetwork] = useState<CardNetwork>("visa")
 
   const [isTransferDialogOpen, setIsTransferDialogOpen] = useState(false)
   const [transferFrom, setTransferFrom] = useState("")
@@ -158,6 +160,7 @@ export default function FinancePage() {
       cardHolder: (newAccCardHolder || currentUser?.fullName || "USER").toUpperCase(),
       expiration: "12/29",
       cardDesignType: newAccDesign,
+      cardNetwork: newAccNetwork,
     })
 
     const updatedAccs = await accountService.getAll()
@@ -265,6 +268,7 @@ export default function FinancePage() {
   const [editNumber, setEditNumber] = useState("")
   const [editHolder, setEditHolder] = useState("")
   const [editDesign, setEditDesign] = useState<FinancialAccountRecord["cardDesignType"]>("brand-dark")
+  const [editNetwork, setEditNetwork] = useState<CardNetwork>("visa")
   const [isEditingAcc, setIsEditingAcc] = useState(false)
   const [deletingAccId, setDeletingAccId] = useState<string | null>(null)
 
@@ -276,6 +280,7 @@ export default function FinancePage() {
     setEditNumber(acc.cardNumber)
     setEditHolder(acc.cardHolder)
     setEditDesign(acc.cardDesignType)
+    setEditNetwork(acc.cardNetwork)
   }
 
   const handleEditAccount = async (e: React.FormEvent) => {
@@ -292,6 +297,7 @@ export default function FinancePage() {
       cardNumber: editNumber || "**** **** 0000",
       cardHolder: (editHolder || "USER").toUpperCase(),
       cardDesignType: editDesign,
+      cardNetwork: editNetwork,
     })
     const [updatedAccs, updatedTxs] = await Promise.all([
       accountService.getAll(),
@@ -514,6 +520,21 @@ export default function FinancePage() {
                   </div>
                 </div>
 
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-muted-foreground">Jenis / Jaringan Kartu</label>
+                  <Select value={newAccNetwork} onValueChange={(val) => setNewAccNetwork(val as CardNetwork)}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Visa / Mastercard / dll" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CARD_NETWORKS.map((n) => (
+                        <SelectItem key={n.value} value={n.value}>{n.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] text-muted-foreground">Muncul sebagai logo di pojok kartu. Pilih &quot;Tanpa Logo&quot; untuk tunai / e-wallet.</p>
+                </div>
+
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <label className="text-xs font-semibold text-muted-foreground">Saldo Awal ({symbol})</label>
@@ -669,6 +690,7 @@ export default function FinancePage() {
                       cardNumber={acc.cardNumber}
                       cardExpiration={acc.expiration}
                       type={acc.cardDesignType}
+                      network={acc.cardNetwork}
                       company={acc.name}
                     />
                   </div>
@@ -905,6 +927,20 @@ export default function FinancePage() {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-muted-foreground">Jenis / Jaringan Kartu</label>
+              <Select value={editNetwork} onValueChange={(val) => setEditNetwork(val as CardNetwork)}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Visa / Mastercard / dll" />
+                </SelectTrigger>
+                <SelectContent>
+                  {CARD_NETWORKS.map((n) => (
+                    <SelectItem key={n.value} value={n.value}>{n.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="grid grid-cols-2 gap-3">

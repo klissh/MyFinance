@@ -2,7 +2,8 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { cx, sortCx } from "@/lib/utils/cx";
-import { MastercardIcon, MastercardIconWhite, PaypassIcon } from "./icons";
+import type { CardNetwork } from "@/lib/card-networks";
+import { NetworkLogo, PaypassIcon } from "./icons";
 
 // Hindari warning "useLayoutEffect does nothing on the server" saat SSR.
 const useIsomorphicLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
@@ -109,7 +110,8 @@ const styles = sortCx({
 const STRIP_TYPES = ["transparent-strip", "gray-strip", "gradient-strip", "salmon-strip"] as const;
 const VERTICAL_STRIP_TYPES = ["gray-strip-vertical", "gradient-strip-vertical", "salmon-strip-vertical"] as const;
 
-const CARD_WITH_COLOR_LOGO = ["brand-dark", "brand-light", "gray-dark", "gray-light"] as const;
+// Desain kartu dengan latar terang → pakai varian logo jaringan yang gelap.
+const LIGHT_CARD_TYPES = ["brand-light", "gray-light", "gray-strip"] as const;
 
 type NormalType =
   | "transparent"
@@ -127,6 +129,8 @@ interface CreditCardProps {
     cardHolder?: string;
     cardExpiration?: string;
     type?: CreditCardType;
+    /** Jaringan / jenis kartu yang logonya muncul di pojok kanan-bawah. */
+    network?: CardNetwork;
     className?: string;
     width?: number;
 }
@@ -149,9 +153,13 @@ export const CreditCard = ({
     cardHolder = "OLIVIA RHYE",
     cardExpiration = "06/28",
     type = "brand-dark",
+    network = "mastercard",
     className,
     width,
 }: CreditCardProps) => {
+    const logoVariant: "light" | "dark" = (LIGHT_CARD_TYPES as readonly string[]).includes(type)
+        ? "light"
+        : "dark";
     const originalWidth = 316;
     const originalHeight = 190;
 
@@ -252,9 +260,11 @@ export const CreditCard = ({
                         </div>
                     </div>
 
-                    <div className={cx("flex h-8 w-11.5 shrink-0 items-center justify-center rounded", activeStyle.cardTypeRoot)}>
-                        {CARD_WITH_COLOR_LOGO.includes(type as (typeof CARD_WITH_COLOR_LOGO)[number]) ? <MastercardIcon /> : <MastercardIconWhite />}
-                    </div>
+                    {network !== "none" && (
+                        <div className={cx("flex h-8 min-w-[46px] shrink-0 items-center justify-center rounded px-1.5", activeStyle.cardTypeRoot)}>
+                            <NetworkLogo network={network} variant={logoVariant} className="h-auto w-auto max-h-[20px] max-w-[44px]" />
+                        </div>
+                    )}
                 </div>
             </div>
         </div>

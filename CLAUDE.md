@@ -216,6 +216,24 @@ UPDATE+DELETE (anggota kamar), `room_members` DELETE (Ketua Kos keluarkan anggot
   di `profiles`/`rooms` + RPC atomik + preview) dipetakan tapi tidak dibangun
   karena data masih testing → wipe + mulai bersih di RM.
 
+## Ronde 7 (2026-09-10) — jenis/jaringan kartu di Sumber Dana
+
+- Migrasi `add_accounts_card_network`: kolom `accounts.card_network text NOT NULL
+  DEFAULT 'mastercard'`. Nilai: `visa | mastercard | amex | unionpay | jcb |
+  other | none`.
+- `lib/card-networks.ts` (baru): `CardNetwork` type, `CARD_NETWORKS` (value+label
+  untuk Select), `normalizeCardNetwork()`.
+- `FinancialAccountRecord.cardNetwork`; `accountService.getAll/add/update` baca &
+  tulis kolomnya (sync antar device — beda dari nomor/pemilik kartu yang di
+  sidecar lokal).
+- `components/shared-assets/credit-card/icons.tsx`: tanda merek sederhana
+  (geometris + teks, bukan reproduksi logo) `VisaIcon`/`AmexIcon`/`UnionPayIcon`/
+  `JcbIcon`/`GenericCardIcon` + dispatcher `NetworkLogo({ network, variant })`.
+  `credit-card.tsx` prop `network` (default `"mastercard"`); `variant` diturunkan
+  dari desain kartu (`LIGHT_CARD_TYPES` → logo gelap). `"none"` → logo disembunyikan.
+- `/finance`: Select "Jenis / Jaringan Kartu" di dialog Tambah & Ubah sumber dana;
+  `<CreditCard network={acc.cardNetwork} />`.
+
 ## Yang TIDAK perlu dikerjakan otomatis
 
 - Migrasi data dari Bizmo ke MSU — menunggu tindakan manusia (pemilik Bizmo invite member, atau ekspor file manual).
