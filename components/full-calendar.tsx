@@ -1,5 +1,6 @@
 "use client"
 
+import { useMoney } from "@/lib/currency"
 import React, { useState } from "react"
 import {
   ChevronLeft,
@@ -50,6 +51,7 @@ export function FullCalendar({
   transactions,
   onAddTransaction,
 }: FullCalendarProps) {
+  const { fmt, fmtShort } = useMoney()
   const [currentDate, setCurrentDate] = useState<Date>(new Date())
   const [selectedDayDate, setSelectedDayDate] = useState<Date | null>(null)
   const [viewMode, setViewMode] = useState<"month" | "week">("week")
@@ -225,16 +227,6 @@ export function FullCalendar({
       return "bg-pink-500/15 dark:bg-[#330f1d] border-pink-500/40 dark:border-pink-700/80 text-pink-800 dark:text-pink-200"
     }
     return "bg-amber-500/15 dark:bg-[#2d1b08] border-amber-500/40 dark:border-amber-700/80 text-amber-800 dark:text-amber-200"
-  }
-
-  const formatShortAmount = (amt: number) => {
-    if (amt >= 1000000) {
-      return `${(amt / 1000000).toFixed(1)}M`
-    }
-    if (amt >= 1000) {
-      return `${(amt / 1000).toFixed(0)}k`
-    }
-    return amt.toString()
   }
 
   // Hours for Week View Grid (12 AM to 11 PM)
@@ -428,11 +420,11 @@ export function FullCalendar({
                         className={`px-2 py-1 rounded-md border text-[11px] font-semibold truncate flex items-center justify-between gap-1 transition-colors ${getChipStyle(
                           tx
                         )}`}
-                        title={`${tx.title} - ${tx.type === "in" ? "+" : "-"}Rp ${tx.amount.toLocaleString("id-ID")}`}
+                        title={`${tx.title} - ${tx.type === "in" ? "+" : "-"}${fmt(tx.amount)}`}
                       >
                         <span className="truncate">{tx.title}</span>
                         <span className="shrink-0 font-bold">
-                          {tx.type === "in" ? "+" : "-"}{formatShortAmount(tx.amount)}
+                          {tx.type === "in" ? "+" : "-"}{fmtShort(tx.amount)}
                         </span>
                       </div>
                     ))}
@@ -518,13 +510,13 @@ export function FullCalendar({
                             className={`p-2 rounded-lg border text-xs font-semibold shadow-none space-y-0.5 transition-all hover:scale-[1.02] z-10 ${getWeekBlockStyle(
                               tx
                             )}`}
-                            title={`${tx.title} - ${tx.type === "in" ? "+" : "-"}Rp ${tx.amount.toLocaleString("id-ID")}`}
+                            title={`${tx.title} - ${tx.type === "in" ? "+" : "-"}${fmt(tx.amount)}`}
                           >
                             <div className="font-bold text-xs truncate">{tx.title}</div>
                             <div className="text-[11px] opacity-90 flex items-center justify-between">
                               <span>{tx.timeLabel || `${formatHourLabel(hour)}`}</span>
                               <span className="font-extrabold">
-                                {tx.type === "in" ? "+" : "-"}{formatShortAmount(tx.amount)}
+                                {tx.type === "in" ? "+" : "-"}{fmtShort(tx.amount)}
                               </span>
                             </div>
                           </div>
@@ -576,13 +568,13 @@ export function FullCalendar({
               <div>
                 <div className="text-xs text-muted-foreground">Total Pemasukan</div>
                 <div className="text-base font-bold text-emerald-600 dark:text-emerald-400">
-                  +Rp {selectedDayIncome.toLocaleString("id-ID")}
+                  +{fmt(selectedDayIncome)}
                 </div>
               </div>
               <div>
                 <div className="text-xs text-muted-foreground">Total Pengeluaran</div>
                 <div className="text-base font-bold text-rose-600 dark:text-rose-400">
-                  -Rp {selectedDayExpense.toLocaleString("id-ID")}
+                  -{fmt(selectedDayExpense)}
                 </div>
               </div>
             </div>
@@ -625,8 +617,7 @@ export function FullCalendar({
                           tx.type === "in" ? "text-emerald-600 dark:text-emerald-400" : "text-foreground"
                         }`}
                       >
-                        {tx.type === "in" ? "+" : "-"}Rp{" "}
-                        {tx.amount.toLocaleString("id-ID")}
+                        {tx.type === "in" ? "+" : "-"}{fmt(tx.amount)}
                       </div>
                       {stripLedgerRef(tx.notes) && (
                         <div className="text-xs text-muted-foreground">{stripLedgerRef(tx.notes)}</div>

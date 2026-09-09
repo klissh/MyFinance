@@ -2099,3 +2099,64 @@ export const kamarService = {
     }
   },
 }
+
+// ==========================================================
+// 7. DANGER SERVICE (Reset / Hapus Semua Data)
+// ==========================================================
+export const dangerService = {
+  /**
+   * Hapus SEMUA data milik user: transaksi, target, saldo/akun, jadwal, dan
+   * kamar kos (yang dia buat — cascade menghapus transaksi/split/kebutuhan;
+   * yang cuma dia ikuti — dia keluar). Lalu bersihkan seluruh cache lokal.
+   */
+  async wipeAll(): Promise<void> {
+    const currentUser = authService.getCurrentUser()
+    const uid = currentUser?.id
+
+    if (isSupabaseConfigured && supabase && uid && uid.includes("-")) {
+      try {
+        // Kamar yang SAYA buat → hapus (cascade ke members/tx/splits/requirements).
+        const { data: myRooms } = await supabase
+          .from("rooms")
+          .select("id")
+          .eq("created_by", uid)
+        for (const r of (myRooms as { id: string }[]) || []) {
+          await supabase.from("rooms").delete().eq("id", r.id)
+        }
+        // Kamar yang cuma SAYA ikuti → keluar.
+        await supabase.from("room_members").delete().eq("user_id", uid)
+        // Data pribadi.
+        await supabase.from("transactions").delete().eq("user_id", uid)
+        await supabase.from("goals").delete().eq("user_id", uid) // cascade saving_logs
+        await supabase.from("scheduled_payments").delete().eq("user_id", uid)
+        await supabase.from("accounts").delete().eq("user_id", uid)
+      } catch (err) {
+        console.warn("wipeAll Supabase error:", err)
+      }
+    }
+
+    if (typeof window !== "undefined") {
+      try {
+        const bases = [
+          BASE_STORAGE_KEYS.ACCOUNTS,
+          BASE_STORAGE_KEYS.TRANSACTIONS,
+          BASE_STORAGE_KEYS.GOALS,
+          BASE_STORAGE_KEYS.SCHEDULED,
+          BASE_STORAGE_KEYS.SHARED_TX,
+          BASE_STORAGE_KEYS.REQUIREMENTS,
+          BASE_STORAGE_KEYS.ROOM,
+          BASE_STORAGE_KEYS.CARD_META,
+          BASE_STORAGE_KEYS.SPLIT_META,
+          BASE_STORAGE_KEYS.SCHEDULED_META,
+        ]
+        const toRemove = Object.keys(localStorage).filter((k) =>
+          bases.some((b) => k === b || k.startsWith(`${b}_`)),
+        )
+        toRemove.forEach((k) => localStorage.removeItem(k))
+      } catch {
+        // ignore
+      }
+      window.dispatchEvent(new Event("room-updated"))
+    }
+  },
+}

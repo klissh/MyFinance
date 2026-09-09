@@ -9,6 +9,7 @@ import {
   CalendarIcon,
   UsersIcon,
   PlusIcon,
+  SettingsIcon,
 } from "lucide-react"
 
 import { NavMain } from "@/components/nav-main"
@@ -55,6 +56,11 @@ const navMain = [
     title: "Jadwal",
     url: "/scheduled",
     icon: <CalendarIcon />,
+  },
+  {
+    title: "Pengaturan",
+    url: "/pengaturan",
+    icon: <SettingsIcon />,
   },
 ]
 

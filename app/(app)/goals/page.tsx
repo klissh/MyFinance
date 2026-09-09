@@ -1,5 +1,6 @@
 "use client"
 
+import { useMoney } from "@/lib/currency"
 import React, { useState, useEffect } from "react"
 import {
   Breadcrumb,
@@ -59,6 +60,7 @@ import {
 } from "@/lib/db"
 
 export default function GoalsPage() {
+  const { fmt, formatInput, parseInput, symbol } = useMoney()
   const [goals, setGoals] = useState<GoalRecord[]>([])
   const [transactions, setTransactions] = useState<TransactionRecord[]>([])
 
@@ -104,16 +106,8 @@ export default function GoalsPage() {
   const [isSubmittingGoal, setIsSubmittingGoal] = useState(false)
   const [isSubmittingDeposit, setIsSubmittingDeposit] = useState(false)
 
-  const formatNumberWithDots = (val: string): string => {
-    const digits = val.replace(/\D/g, "")
-    if (!digits) return ""
-    return Number(digits).toLocaleString("id-ID")
-  }
-
-  const parseFormattedNumber = (val: string): number => {
-    const digits = val.replace(/\D/g, "")
-    return parseFloat(digits) || 0
-  }
+  const formatNumberWithDots = formatInput
+  const parseFormattedNumber = parseInput
 
   // Handle Add New Goal
   const handleAddGoal = async (e: React.FormEvent) => {
@@ -164,7 +158,7 @@ export default function GoalsPage() {
     setGoals(refreshed)
 
     showToastNotification(
-      `Berhasil setor Rp ${amt.toLocaleString("id-ID")} ke "${targetGoal.title}"!`
+      `Berhasil setor ${fmt(amt)} ke "${targetGoal.title}"!`
     )
 
     setDepositAmount("")
@@ -237,7 +231,7 @@ export default function GoalsPage() {
             </CardHeader>
             <CardContent className="p-0 space-y-1">
               <div className="text-2xl font-bold tracking-tight text-foreground">
-                Rp {totalSavedAmount.toLocaleString("id-ID")}
+                {fmt(totalSavedAmount)}
               </div>
               <p className="text-xs text-muted-foreground">Terkumpul untuk seluruh target</p>
               <div className="pt-2">
@@ -257,7 +251,7 @@ export default function GoalsPage() {
             </CardHeader>
             <CardContent className="p-0 space-y-1">
               <div className="text-2xl font-bold tracking-tight">
-                Rp {totalTargetAmount.toLocaleString("id-ID")}
+                {fmt(totalTargetAmount)}
               </div>
               <p className="text-xs text-muted-foreground">{goals.length} barang & target impian aktif</p>
             </CardContent>
@@ -274,10 +268,10 @@ export default function GoalsPage() {
             </CardHeader>
             <CardContent className="p-0 space-y-1">
               <div className="text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">
-                Rp {remainingBudget.toLocaleString("id-ID")}
+                {fmt(remainingBudget)}
               </div>
               <p className="text-xs text-muted-foreground">
-                {totalIncome > 0 ? `Bebas alokasi dari pemasukan Rp ${totalIncome.toLocaleString("id-ID")}` : "Belum ada pemasukan / anggaran tercatat"}
+                {totalIncome > 0 ? `Bebas alokasi dari pemasukan ${fmt(totalIncome)}` : "Belum ada pemasukan / anggaran tercatat"}
               </p>
             </CardContent>
           </Card>
@@ -293,7 +287,7 @@ export default function GoalsPage() {
             </CardHeader>
             <CardContent className="p-0 space-y-1">
               <div className="text-2xl font-bold tracking-tight text-rose-600 dark:text-rose-400">
-                Rp {totalExpense.toLocaleString("id-ID")}
+                {fmt(totalExpense)}
               </div>
               <p className="text-xs text-muted-foreground">
                 {totalIncome > 0 ? `${expensePercentage}% dari total pemasukan` : "Total pengeluaran tercatat"}
@@ -341,7 +335,7 @@ export default function GoalsPage() {
                         <SelectContent>
                           {goals.map((g) => (
                             <SelectItem key={g.id} value={g.id}>
-                              {g.title} (Terkumpul: Rp {g.currentAmount.toLocaleString("id-ID")})
+                              {g.title} (Terkumpul: {fmt(g.currentAmount)})
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -349,7 +343,7 @@ export default function GoalsPage() {
                     </div>
 
                     <div className="space-y-1">
-                      <label className="text-xs font-semibold text-muted-foreground">Nominal Setoran (Rp)</label>
+                      <label className="text-xs font-semibold text-muted-foreground">Nominal Setoran ({symbol})</label>
                       <Input
                         type="text"
                         placeholder="0"
@@ -452,7 +446,7 @@ export default function GoalsPage() {
                     </div>
 
                     <div className="space-y-1">
-                      <label className="text-xs font-semibold text-muted-foreground">Nominal Target (Rp)</label>
+                      <label className="text-xs font-semibold text-muted-foreground">Nominal Target ({symbol})</label>
                       <Input
                         type="text"
                         placeholder="0"
@@ -562,7 +556,7 @@ export default function GoalsPage() {
                       <div className="flex items-baseline justify-between text-xs">
                         <span className="text-muted-foreground">Terkumpul</span>
                         <span className="font-bold text-sm text-foreground">
-                          Rp {g.currentAmount.toLocaleString("id-ID")} / <span className="text-xs text-muted-foreground font-medium">Rp {g.targetAmount.toLocaleString("id-ID")}</span>
+                          {fmt(g.currentAmount)} / <span className="text-xs text-muted-foreground font-medium">{fmt(g.targetAmount)}</span>
                         </span>
                       </div>
 
@@ -570,7 +564,7 @@ export default function GoalsPage() {
 
                       <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-1">
                         <span>Progres: <strong className="text-foreground">{percentage}%</strong></span>
-                        <span>Sisa: <strong>Rp {Math.max(0, remaining).toLocaleString("id-ID")}</strong></span>
+                        <span>Sisa: <strong>{fmt(Math.max(0, remaining))}</strong></span>
                       </div>
                     </CardContent>
 

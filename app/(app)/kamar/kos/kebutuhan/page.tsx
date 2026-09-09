@@ -1,5 +1,6 @@
 "use client"
 
+import { useMoney } from "@/lib/currency"
 import React, { useState, useEffect } from "react"
 import { kamarService, KamarMemberRecord } from "@/lib/db"
 import {
@@ -81,6 +82,7 @@ interface KosRoutineRequirement {
 }
 
 export default function KebutuhanBulananKosPage() {
+  const { fmt, formatInput, parseInput, symbol } = useMoney()
   // Notification Toast
   const [notification, setNotification] = useState<string | null>(null)
   const showNotification = (msg: string) => {
@@ -141,16 +143,8 @@ export default function KebutuhanBulananKosPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [payingId, setPayingId] = useState<string | null>(null)
 
-  const formatNumberWithDots = (val: string): string => {
-    const digits = val.replace(/\D/g, "")
-    if (!digits) return ""
-    return Number(digits).toLocaleString("id-ID")
-  }
-
-  const parseFormattedNumber = (val: string): number => {
-    const digits = val.replace(/\D/g, "")
-    return parseFloat(digits) || 0
-  }
+  const formatNumberWithDots = formatInput
+  const parseFormattedNumber = parseInput
 
   const handleAddRequirement = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -172,7 +166,7 @@ export default function KebutuhanBulananKosPage() {
 
     await reloadRequirements()
     showNotification(
-      `Kebutuhan bulanan "${newTitle}" (Rp ${total.toLocaleString("id-ID")}) berhasil disimpan!`,
+      `Kebutuhan bulanan "${newTitle}" (${fmt(total)}) berhasil disimpan!`,
     )
 
     setNewTitle("")
@@ -192,7 +186,7 @@ export default function KebutuhanBulananKosPage() {
     await reloadRequirements()
 
     showNotification(
-      `Setoran Rp ${item.perPersonPrice.toLocaleString("id-ID")} untuk "${item.title}" berhasil dibayar & dicatat di database!`
+      `Setoran ${fmt(item.perPersonPrice)} untuk "${item.title}" berhasil dibayar & dicatat di database!`
     )
     setPayingId(null)
   }
@@ -271,7 +265,7 @@ export default function KebutuhanBulananKosPage() {
             </CardHeader>
             <CardContent className="p-0 space-y-1">
               <div className="text-2xl font-bold tracking-tight text-foreground">
-                Rp {totalKosRequirements.toLocaleString("id-ID")}
+                {fmt(totalKosRequirements)}
               </div>
               <p className="text-xs text-muted-foreground">Total pengeluaran rutin bersama</p>
             </CardContent>
@@ -288,7 +282,7 @@ export default function KebutuhanBulananKosPage() {
             </CardHeader>
             <CardContent className="p-0 space-y-1">
               <div className="text-2xl font-bold tracking-tight text-foreground">
-                Rp {totalMyMonthlyShare.toLocaleString("id-ID")}
+                {fmt(totalMyMonthlyShare)}
               </div>
               <p className="text-xs text-muted-foreground">Proporsi bagian Anda ({membersCount} orang)</p>
             </CardContent>
@@ -305,7 +299,7 @@ export default function KebutuhanBulananKosPage() {
             </CardHeader>
             <CardContent className="p-0 space-y-1">
               <div className="text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">
-                Rp {totalMyPaidShare.toLocaleString("id-ID")}
+                {fmt(totalMyPaidShare)}
               </div>
               <p className="text-xs text-muted-foreground">Telah terpotong di log pribadi</p>
             </CardContent>
@@ -322,7 +316,7 @@ export default function KebutuhanBulananKosPage() {
             </CardHeader>
             <CardContent className="p-0 space-y-1">
               <div className="text-2xl font-bold tracking-tight text-amber-600 dark:text-amber-400">
-                Rp {totalMyPendingShare.toLocaleString("id-ID")}
+                {fmt(totalMyPendingShare)}
               </div>
               <p className="text-xs text-muted-foreground">Sisa iuran rutin Anda bulan ini</p>
             </CardContent>
@@ -401,7 +395,7 @@ export default function KebutuhanBulananKosPage() {
 
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1">
-                        <label className="text-xs font-semibold text-muted-foreground">Total Harga (Rp)</label>
+                        <label className="text-xs font-semibold text-muted-foreground">Total Harga ({symbol})</label>
                         <Input
                           type="text"
                           placeholder="0"
@@ -572,13 +566,13 @@ export default function KebutuhanBulananKosPage() {
                             <div className="text-[11px] text-muted-foreground">PJ: <strong>{r.responsiblePerson}</strong></div>
                           </TableCell>
                           <TableCell className="px-3.5 py-3 font-bold text-xs text-foreground whitespace-nowrap">
-                            Rp {r.totalPrice.toLocaleString("id-ID")}
+                            {fmt(r.totalPrice)}
                           </TableCell>
                           <TableCell className="px-3.5 py-3 text-xs text-muted-foreground whitespace-nowrap">
                             {r.splitPeopleCount} Orang
                           </TableCell>
                           <TableCell className="px-3.5 py-3 font-extrabold text-xs text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
-                            Rp {r.perPersonPrice.toLocaleString("id-ID")}
+                            {fmt(r.perPersonPrice)}
                           </TableCell>
                           <TableCell className="px-3.5 py-3 whitespace-nowrap">
                             {r.isPaidByMe ? (
@@ -610,7 +604,7 @@ export default function KebutuhanBulananKosPage() {
                                   </div>
                                 ) : (
                                   <>
-                                    Bayar (Rp {r.perPersonPrice.toLocaleString("id-ID")}) <ArrowRight className="size-3 ml-1" />
+                                    Bayar ({fmt(r.perPersonPrice)}) <ArrowRight className="size-3 ml-1" />
                                   </>
                                 )}
                               </Button>
@@ -654,12 +648,12 @@ export default function KebutuhanBulananKosPage() {
                     <div className="p-2 rounded-lg bg-muted/40 border border-border text-[11px] space-y-1">
                       <div className="flex items-center justify-between text-muted-foreground">
                         <span>Total Tagihan:</span>
-                        <span className="font-semibold text-foreground">Rp {r.totalPrice.toLocaleString("id-ID")}</span>
+                        <span className="font-semibold text-foreground">{fmt(r.totalPrice)}</span>
                       </div>
                       <div className="flex items-center justify-between font-bold pt-0.5 border-t border-border/50">
                         <span>Beban Saya ({r.splitPeopleCount} Pghn):</span>
                         <span className="text-emerald-600 dark:text-emerald-400">
-                          Rp {r.perPersonPrice.toLocaleString("id-ID")}
+                          {fmt(r.perPersonPrice)}
                         </span>
                       </div>
                     </div>

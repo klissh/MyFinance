@@ -1,5 +1,6 @@
 "use client"
 
+import { useMoney } from "@/lib/currency"
 import React, { useState, useEffect } from "react"
 import {
   Breadcrumb,
@@ -71,6 +72,7 @@ interface AccountMutation {
 }
 
 export default function FinancePage() {
+  const { fmt, formatInput, parseInput, symbol } = useMoney()
   const [accounts, setAccounts] = useState<FinancialAccountRecord[]>([])
   const [mutations, setMutations] = useState<AccountMutation[]>([])
 
@@ -114,16 +116,8 @@ export default function FinancePage() {
   const [isSubmittingAcc, setIsSubmittingAcc] = useState(false)
   const [isSubmittingTransfer, setIsSubmittingTransfer] = useState(false)
 
-  const formatNumberWithDots = (val: string): string => {
-    const digits = val.replace(/\D/g, "")
-    if (!digits) return ""
-    return Number(digits).toLocaleString("id-ID")
-  }
-
-  const parseFormattedNumber = (val: string): number => {
-    const digits = val.replace(/\D/g, "")
-    return parseFloat(digits) || 0
-  }
+  const formatNumberWithDots = formatInput
+  const parseFormattedNumber = parseInput
 
   const [notification, setNotification] = useState<string | null>(null)
 
@@ -242,7 +236,7 @@ export default function FinancePage() {
     setMutations(formattedMutations)
 
     showNotification(
-      `Transfer Rp ${amt.toLocaleString("id-ID")} dari "${transferFrom}" ke "${transferTo}" berhasil dicatat di mutasi!`
+      `Transfer ${fmt(amt)} dari "${transferFrom}" ke "${transferTo}" berhasil dicatat di mutasi!`
     )
 
     setTransferAmount("")
@@ -311,7 +305,7 @@ export default function FinancePage() {
                     <SelectContent>
                       {accounts.map((acc) => (
                         <SelectItem key={acc.id} value={acc.name}>
-                          {acc.name} (Saldo: Rp {acc.balance.toLocaleString("id-ID")})
+                          {acc.name} (Saldo: {fmt(acc.balance)})
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -327,7 +321,7 @@ export default function FinancePage() {
                     <SelectContent>
                       {accounts.map((acc) => (
                         <SelectItem key={acc.id} value={acc.name}>
-                          {acc.name} (Saldo: Rp {acc.balance.toLocaleString("id-ID")})
+                          {acc.name} (Saldo: {fmt(acc.balance)})
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -335,7 +329,7 @@ export default function FinancePage() {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-muted-foreground">Nominal Transfer (Rp)</label>
+                  <label className="text-xs font-semibold text-muted-foreground">Nominal Transfer ({symbol})</label>
                   <Input
                     type="text"
                     placeholder="0"
@@ -429,7 +423,7 @@ export default function FinancePage() {
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <label className="text-xs font-semibold text-muted-foreground">Saldo Awal (Rp)</label>
+                    <label className="text-xs font-semibold text-muted-foreground">Saldo Awal ({symbol})</label>
                     <Input
                       type="text"
                       placeholder="0"
@@ -504,7 +498,7 @@ export default function FinancePage() {
             </CardHeader>
             <CardContent className="p-0 space-y-1">
               <div className="text-2xl font-bold tracking-tight">
-                Rp {totalBalance.toLocaleString("id-ID")}
+                {fmt(totalBalance)}
               </div>
               <p className="text-xs text-muted-foreground">Tersimpan di {totalAccountsCount} akun aktif</p>
             </CardContent>
@@ -541,7 +535,7 @@ export default function FinancePage() {
                 {topAccount ? `${topAccount.name} (${topPct}%)` : "Belum ada"}
               </div>
               <p className="text-xs text-muted-foreground">
-                {topAccount ? `Rp ${topAccount.balance.toLocaleString("id-ID")} saldo aktif` : "Belum ada akun"}
+                {topAccount ? `${fmt(topAccount.balance)} saldo aktif` : "Belum ada akun"}
               </p>
             </CardContent>
           </Card>
@@ -595,7 +589,7 @@ export default function FinancePage() {
                         {acc.type}
                       </Badge>
                       <div className="text-sm font-extrabold text-emerald-600 dark:text-emerald-400">
-                        Rp {acc.balance.toLocaleString("id-ID")}
+                        {fmt(acc.balance)}
                       </div>
                     </div>
                   </div>
@@ -699,7 +693,7 @@ export default function FinancePage() {
                             : "text-foreground"
                         }`}
                       >
-                        {m.type === "in" ? "+" : m.type === "out" ? "-" : ""}Rp {m.amount.toLocaleString("id-ID")}
+                        {m.type === "in" ? "+" : m.type === "out" ? "-" : ""}{fmt(m.amount)}
                       </TableCell>
                     </TableRow>
                   ))

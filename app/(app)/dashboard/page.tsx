@@ -1,5 +1,6 @@
 "use client"
 
+import { useMoney, formatMoney } from "@/lib/currency"
 import React, { useState, useEffect } from "react"
 import Link from "next/link"
 import {
@@ -54,6 +55,7 @@ import {
 } from "lucide-react"
 
 export default function DashboardPage() {
+  const { fmt, symbol, currency } = useMoney()
   // MYR to IDR Live Rate Converter State
   const [myrInput, setMyrInput] = useState<number | string>(100)
   const [rateMYRtoIDR, setRateMYRtoIDR] = useState<number>(4403.0) // fallback sampai API menjawab
@@ -122,30 +124,30 @@ export default function DashboardPage() {
   const metrics = [
     {
       title: "Sisa Anggaran Bulanan",
-      amount: `Rp ${remainingBudget.toLocaleString("id-ID")}`,
-      subtext: totalIncome > 0 ? `Bebas alokasi dari total Rp ${totalIncome.toLocaleString("id-ID")}` : "Belum ada pemasukan / anggaran",
+      amount: `${fmt(remainingBudget)}`,
+      subtext: totalIncome > 0 ? `Bebas alokasi dari total ${fmt(totalIncome)}` : "Belum ada pemasukan / anggaran",
       progress: budgetProgress,
       icon: <Wallet className="size-4 text-foreground" />,
-      badge: totalIncome > 0 ? `${budgetProgress}% Sisa` : "Rp 0",
+      badge: totalIncome > 0 ? `${budgetProgress}% Sisa` : `${symbol} 0`,
     },
     {
       title: "Pemasukan (Bulan Ini)",
-      amount: `Rp ${totalIncome.toLocaleString("id-ID")}`,
+      amount: `${fmt(totalIncome)}`,
       subtext: totalIncome > 0 ? "Total pemasukan tercatat" : "Belum ada pemasukan",
       icon: <TrendingUp className="size-4 text-emerald-600 dark:text-emerald-400" />,
-      badge: totalIncome > 0 ? "Masuk" : "Rp 0",
+      badge: totalIncome > 0 ? "Masuk" : `${symbol} 0`,
     },
     {
       title: "Pengeluaran (Bulan Ini)",
-      amount: `Rp ${totalExpense.toLocaleString("id-ID")}`,
+      amount: `${fmt(totalExpense)}`,
       subtext: totalExpense > 0 ? "Total pengeluaran tercatat" : "Belum ada pengeluaran",
       icon: <TrendingDown className="size-4 text-rose-600 dark:text-rose-400" />,
-      badge: totalExpense > 0 ? "Tercatat" : "Rp 0",
+      badge: totalExpense > 0 ? "Tercatat" : `${symbol} 0`,
     },
     {
       title: "Total Uang Ketabung",
-      amount: `Rp ${totalSaved.toLocaleString("id-ID")}`,
-      subtext: totalGoalTarget > 0 ? `Target Rp ${totalGoalTarget.toLocaleString("id-ID")}` : "Belum ada target",
+      amount: `${fmt(totalSaved)}`,
+      subtext: totalGoalTarget > 0 ? `Target ${fmt(totalGoalTarget)}` : "Belum ada target",
       progress: savedProgress,
       icon: <PiggyBank className="size-4 text-foreground" />,
       badge: `${savedProgress}% Target`,
@@ -277,7 +279,7 @@ export default function DashboardPage() {
                                 : "text-foreground"
                             }`}
                           >
-                            {tx.type === "in" ? "+" : "-"}Rp {tx.amount.toLocaleString("id-ID")}
+                            {tx.type === "in" ? "+" : "-"}{fmt(tx.amount)}
                           </TableCell>
                         </TableRow>
                       ))
@@ -315,7 +317,7 @@ export default function DashboardPage() {
                       Tunggakan / Tagihan Saya
                     </div>
                     <div className="text-lg font-bold text-rose-600 dark:text-rose-400">
-                      Rp {myTunggakan.toLocaleString("id-ID")}
+                      {fmt(myTunggakan)}
                     </div>
                     <div className="text-[11px] text-muted-foreground">
                       {myTunggakan > 0 ? "Harus dibayar ke anggota kos" : "Tidak ada tunggakan"}
@@ -327,7 +329,7 @@ export default function DashboardPage() {
                       Piutang Saya (Ditalangi)
                     </div>
                     <div className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
-                      +Rp {myPiutang.toLocaleString("id-ID")}
+                      +{fmt(myPiutang)}
                     </div>
                     <div className="text-[11px] text-muted-foreground">
                       {myPiutang > 0 ? "Penghuni lain utang ke Anda" : "Tidak ada piutang"}
@@ -373,7 +375,7 @@ export default function DashboardPage() {
                         <div className="text-[11px] text-muted-foreground">{acc.type}</div>
                       </div>
                       <div className="text-xs font-extrabold text-foreground">
-                        Rp {acc.balance.toLocaleString("id-ID")}
+                        {fmt(acc.balance)}
                       </div>
                     </div>
                   ))
@@ -414,8 +416,8 @@ export default function DashboardPage() {
                         </div>
                         <Progress value={pct} className="h-2" />
                         <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                          <span>Rp {g.currentAmount.toLocaleString("id-ID")}</span>
-                          <span>Target: Rp {g.targetAmount.toLocaleString("id-ID")}</span>
+                          <span>{fmt(g.currentAmount)}</span>
+                          <span>Target: {fmt(g.targetAmount)}</span>
                         </div>
                       </div>
                     )
@@ -424,12 +426,12 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
 
-            {/* Live MYR to IDR Currency Converter */}
+            {/* Konversi Ringgit ⇄ Rupiah (arah menyesuaikan mata uang aktif) */}
             <Card className="border border-border shadow-none p-5 gap-4 bg-card">
               <CardHeader className="p-0 flex flex-row items-center justify-between">
                 <CardTitle className="text-base font-semibold flex items-center gap-2">
                   <Globe className="size-5 text-primary" />
-                  Konversi Kurs MYR → IDR
+                  {currency === "MYR" ? "Konversi Rupiah → Ringgit" : "Konversi Ringgit → Rupiah"}
                 </CardTitle>
                 <Badge variant="outline" className="text-[11px] font-normal border-border">
                   Live Rate
@@ -438,7 +440,9 @@ export default function DashboardPage() {
 
               <CardContent className="p-0 space-y-3">
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-muted-foreground">Jumlah Ringgit (MYR)</label>
+                  <label className="text-xs font-semibold text-muted-foreground">
+                    Jumlah {currency === "MYR" ? "Rupiah (Rp)" : "Ringgit (RM)"}
+                  </label>
                   <div className="relative">
                     <Input
                       type="number"
@@ -446,17 +450,21 @@ export default function DashboardPage() {
                       onChange={(e) => setMyrInput(e.target.value)}
                       className="text-xs h-9"
                     />
-                    <span className="absolute right-3 top-2 text-xs font-bold text-muted-foreground">MYR</span>
+                    <span className="absolute right-3 top-2 text-xs font-bold text-muted-foreground">
+                      {currency === "MYR" ? "Rp" : "RM"}
+                    </span>
                   </div>
                 </div>
 
                 <div className="p-3 rounded-xl border border-border bg-muted/40 space-y-1">
-                  <div className="text-[11px] text-muted-foreground">Hasil Konversi (IDR):</div>
+                  <div className="text-[11px] text-muted-foreground">Hasil Konversi:</div>
                   <div className="text-lg font-extrabold text-emerald-600 dark:text-emerald-400">
-                    Rp {((Number(myrInput) || 0) * rateMYRtoIDR).toLocaleString("id-ID")}
+                    {currency === "MYR"
+                      ? formatMoney((Number(myrInput) || 0) / (rateMYRtoIDR || 1), "MYR")
+                      : formatMoney((Number(myrInput) || 0) * rateMYRtoIDR, "IDR")}
                   </div>
                   <div className="text-[10px] text-muted-foreground">
-                    1 MYR = Rp {rateMYRtoIDR.toLocaleString("id-ID", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} IDR
+                    1 RM = {formatMoney(rateMYRtoIDR, "IDR")}
                   </div>
                 </div>
               </CardContent>

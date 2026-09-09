@@ -1,5 +1,6 @@
 "use client"
 
+import { useMoney } from "@/lib/currency"
 import React, { useState } from "react"
 import { useRouter } from "next/navigation"
 import { kamarService } from "@/lib/db"
@@ -40,6 +41,7 @@ import {
 } from "lucide-react"
 
 export default function BuatKamarBaruPage() {
+  const { formatInput, parseInput, symbol } = useMoney()
   const router = useRouter()
 
   // Form State: Buat Kamar
@@ -60,16 +62,8 @@ export default function BuatKamarBaruPage() {
     setTimeout(() => setNotification(null), 4000)
   }
 
-  const formatNumberWithDots = (val: string): string => {
-    const digits = val.replace(/\D/g, "")
-    if (!digits) return ""
-    return Number(digits).toLocaleString("id-ID")
-  }
-
-  const parseFormattedNumber = (val: string): number => {
-    const digits = val.replace(/\D/g, "")
-    return parseFloat(digits) || 0
-  }
+  const formatNumberWithDots = formatInput
+  const parseFormattedNumber = parseInput
 
   // Handle Buat Kamar
   const handleCreateRoom = async (e: React.FormEvent) => {
@@ -187,7 +181,7 @@ export default function BuatKamarBaruPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground">Iuran Bulanan (Rp)</label>
+                  <label className="text-xs font-semibold text-muted-foreground">Iuran Bulanan ({symbol})</label>
                   <Input
                     type="text"
                     placeholder="200.000"

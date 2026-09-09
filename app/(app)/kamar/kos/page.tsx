@@ -1,5 +1,6 @@
 "use client"
 
+import { useMoney } from "@/lib/currency"
 import React, { useState, useEffect, useCallback } from "react"
 import { kamarService, accountService, KamarMemberRecord, FinancialAccountRecord } from "@/lib/db"
 import {
@@ -78,6 +79,7 @@ export interface SharedTransaction {
 }
 
 export default function TransaksiKosPage() {
+  const { fmt, formatInput, parseInput, symbol } = useMoney()
   // Anggota kamar diambil dari data kamar yang sebenarnya (tabel room_members).
   const [members, setMembers] = useState<KamarMemberRecord[]>([])
   const [accounts, setAccounts] = useState<FinancialAccountRecord[]>([])
@@ -152,16 +154,8 @@ export default function TransaksiKosPage() {
     })
   }
 
-  const formatNumberWithDots = (val: string): string => {
-    const digits = val.replace(/\D/g, "")
-    if (!digits) return ""
-    return Number(digits).toLocaleString("id-ID")
-  }
-
-  const parseFormattedNumber = (val: string): number => {
-    const digits = val.replace(/\D/g, "")
-    return parseFloat(digits) || 0
-  }
+  const formatNumberWithDots = formatInput
+  const parseFormattedNumber = parseInput
 
   const handleAddTransaction = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -189,8 +183,8 @@ export default function TransaksiKosPage() {
     const myShareRp = Math.ceil(total / Math.max(1, selectedMemberIds.length))
     showNotification(
       payerIsMe
-        ? `Split bill "${newTitle}" (total Rp ${total.toLocaleString("id-ID")}) dicatat. Bagian kamu Rp ${myShareRp.toLocaleString("id-ID")} otomatis masuk sebagai pengeluaran di transaksi pribadi.`
-        : `Split bill "${newTitle}" dicatat, dibayar oleh ${payer?.name}. Bagianmu Rp ${myShareRp.toLocaleString("id-ID")} — bayar dari tabel untuk mencatatnya.`,
+        ? `Split bill "${newTitle}" (total ${fmt(total)}) dicatat. Bagian kamu ${fmt(myShareRp)} otomatis masuk sebagai pengeluaran di transaksi pribadi.`
+        : `Split bill "${newTitle}" dicatat, dibayar oleh ${payer?.name}. Bagianmu ${fmt(myShareRp)} — bayar dari tabel untuk mencatatnya.`,
     )
 
     setNewTitle("")
@@ -211,7 +205,7 @@ export default function TransaksiKosPage() {
     setSettlingId(null)
 
     showNotification(
-      `Bagianmu Rp ${amt.toLocaleString("id-ID")} untuk "${targetTx.title}" ditandai lunas ke ${targetTx.paidBy} & tercatat sebagai pengeluaran di transaksi pribadi.`,
+      `Bagianmu ${fmt(amt)} untuk "${targetTx.title}" ditandai lunas ke ${targetTx.paidBy} & tercatat sebagai pengeluaran di transaksi pribadi.`,
     )
   }
 
@@ -301,7 +295,7 @@ export default function TransaksiKosPage() {
             </CardHeader>
             <CardContent className="p-0 space-y-1">
               <div className="text-2xl font-bold tracking-tight text-rose-600 dark:text-rose-400">
-                Rp {totalMyOwed.toLocaleString("id-ID")}
+                {fmt(totalMyOwed)}
               </div>
               <p className="text-xs text-muted-foreground">Harus dibayar ke penghuni lain</p>
             </CardContent>
@@ -318,7 +312,7 @@ export default function TransaksiKosPage() {
             </CardHeader>
             <CardContent className="p-0 space-y-1">
               <div className="text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">
-                +Rp {totalOthersOweMe.toLocaleString("id-ID")}
+                +{fmt(totalOthersOweMe)}
               </div>
               <p className="text-xs text-muted-foreground">Penghuni lain utang ke saya</p>
             </CardContent>
@@ -335,10 +329,10 @@ export default function TransaksiKosPage() {
             </CardHeader>
             <CardContent className="p-0 space-y-1">
               <div className="text-2xl font-bold tracking-tight">
-                Rp {totalMyShareMonth.toLocaleString("id-ID")}
+                {fmt(totalMyShareMonth)}
               </div>
               <p className="text-xs text-muted-foreground">
-                dari total belanja bersama Rp {totalKosTransactionsMonth.toLocaleString("id-ID")} ({transactions.length} transaksi)
+                dari total belanja bersama {fmt(totalKosTransactionsMonth)} ({transactions.length} transaksi)
               </p>
             </CardContent>
           </Card>
@@ -389,7 +383,7 @@ export default function TransaksiKosPage() {
 
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1">
-                      <label className="text-xs font-semibold text-muted-foreground">Total Nominal Tagihan (Rp)</label>
+                      <label className="text-xs font-semibold text-muted-foreground">Total Nominal Tagihan ({symbol})</label>
                       <Input
                         type="text"
                         placeholder="0"
@@ -446,7 +440,7 @@ export default function TransaksiKosPage() {
                           <SelectContent>
                             {accounts.map((a) => (
                               <SelectItem key={a.id} value={a.name}>
-                                {a.name} (Rp {a.balance.toLocaleString("id-ID")})
+                                {a.name} ({fmt(a.balance)})
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -487,7 +481,7 @@ export default function TransaksiKosPage() {
                     <div className="text-[11px] text-muted-foreground">
                       Per orang menanggung:{" "}
                       <strong className="text-foreground">
-                        Rp {Math.ceil((parseFormattedNumber(newTotalAmount) || 0) / Math.max(1, selectedMemberIds.length)).toLocaleString("id-ID")}
+                        {fmt(Math.ceil((parseFormattedNumber(newTotalAmount) || 0) / Math.max(1, selectedMemberIds.length)))}
                       </strong>
                     </div>
                   </div>
@@ -618,14 +612,14 @@ export default function TransaksiKosPage() {
                             : tx.splitBetween.join(", ")}
                         </TableCell>
                         <TableCell className="px-3.5 py-3 font-bold text-xs text-foreground whitespace-nowrap">
-                          Rp {tx.totalAmount.toLocaleString("id-ID")}
+                          {fmt(tx.totalAmount)}
                           <span className="block text-[10px] font-normal text-muted-foreground">
                             ÷ {tx.splitBetween.length} orang
                           </span>
                         </TableCell>
                         <TableCell className="px-3.5 py-3 text-right text-xs whitespace-nowrap">
                           <span className="font-bold text-foreground">
-                            Rp {tx.perPersonAmount.toLocaleString("id-ID")}
+                            {fmt(tx.perPersonAmount)}
                           </span>
                           {tx.myShare > 0 ? (
                             <span className="block text-[10px] text-rose-600 dark:text-rose-400">
@@ -633,7 +627,7 @@ export default function TransaksiKosPage() {
                             </span>
                           ) : tx.myShare < 0 ? (
                             <span className="block text-[10px] text-emerald-600 dark:text-emerald-400">
-                              +Rp {Math.abs(tx.myShare).toLocaleString("id-ID")} piutang
+                              +{fmt(Math.abs(tx.myShare))} piutang
                             </span>
                           ) : (
                             <span className="block text-[10px] text-muted-foreground">lunas</span>

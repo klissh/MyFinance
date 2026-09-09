@@ -1,5 +1,6 @@
 "use client"
 
+import { useMoney } from "@/lib/currency"
 import React, { useState, useEffect } from "react"
 import { transactionService, scheduledService, ScheduledBillRecord } from "@/lib/db"
 import { cn } from "@/lib/utils"
@@ -64,6 +65,7 @@ import {
 } from "lucide-react"
 
 export default function ScheduledPage() {
+  const { fmt, formatInput, parseInput, symbol } = useMoney()
   const [calendarTransactions, setCalendarTransactions] = useState<CalendarTransaction[]>([])
   const [scheduledBills, setScheduledBills] = useState<ScheduledBillRecord[]>([])
 
@@ -102,16 +104,8 @@ export default function ScheduledPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [payingId, setPayingId] = useState<string | null>(null)
 
-  const formatNumberWithDots = (val: string): string => {
-    const digits = val.replace(/\D/g, "")
-    if (!digits) return ""
-    return Number(digits).toLocaleString("id-ID")
-  }
-
-  const parseFormattedNumber = (val: string): number => {
-    const digits = val.replace(/\D/g, "")
-    return parseFloat(digits) || 0
-  }
+  const formatNumberWithDots = formatInput
+  const parseFormattedNumber = parseInput
 
   const handleAddScheduledItem = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -178,7 +172,7 @@ export default function ScheduledPage() {
     )
 
     showNotification(
-      `Pembayaran "${bill.title}" sebesar Rp ${bill.amount.toLocaleString("id-ID")} berhasil & otomatis dicatat ke log Transaksi!`
+      `Pembayaran "${bill.title}" sebesar ${fmt(bill.amount)} berhasil & otomatis dicatat ke log Transaksi!`
     )
     setPayingId(null)
   }
@@ -235,7 +229,7 @@ export default function ScheduledPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-foreground">Jumlah Tagihan (Rp)</label>
+                  <label className="text-xs font-semibold text-foreground">Jumlah Tagihan ({symbol})</label>
                   <Input
                     type="text"
                     placeholder="1.500.000"
@@ -382,7 +376,7 @@ export default function ScheduledPage() {
             </CardHeader>
             <CardContent className="p-0 space-y-1">
               <div className="text-2xl font-bold tracking-tight text-rose-600 dark:text-rose-400">
-                Rp {totalPendingAmount.toLocaleString("id-ID")}
+                {fmt(totalPendingAmount)}
               </div>
               <p className="text-xs text-muted-foreground">Total alokasi tagihan terjadwal</p>
             </CardContent>
@@ -402,7 +396,7 @@ export default function ScheduledPage() {
                 {nextClosestBill ? nextClosestBill.title : "Tidak ada"}
               </div>
               <p className="text-xs text-muted-foreground">
-                {nextClosestBill ? `${nextClosestBill.formattedDate} • Rp ${nextClosestBill.amount.toLocaleString("id-ID")}` : "Semua lunas / kosong"}
+                {nextClosestBill ? `${nextClosestBill.formattedDate} • ${fmt(nextClosestBill.amount)}` : "Semua lunas / kosong"}
               </p>
             </CardContent>
           </Card>
@@ -502,7 +496,7 @@ export default function ScheduledPage() {
                         {b.account}
                       </TableCell>
                       <TableCell className="px-5 py-3.5 font-bold text-sm text-rose-600 dark:text-rose-400">
-                        -Rp {b.amount.toLocaleString("id-ID")}
+                        -{fmt(b.amount)}
                       </TableCell>
                       <TableCell className="px-5 py-3.5 text-center">
                         {b.status === "paid" ? (

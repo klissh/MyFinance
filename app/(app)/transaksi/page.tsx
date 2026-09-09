@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react"
 import { transactionService, kamarService, stripLedgerRef } from "@/lib/db"
+import { useMoney } from "@/lib/currency"
 import { format } from "date-fns"
 import { cn } from "@/lib/utils"
 import {
@@ -83,6 +84,7 @@ export interface TransactionItem {
 }
 
 export default function TransaksiPage() {
+  const { fmt, formatInput, parseInput, symbol } = useMoney()
   // Mock Initial Transactions State
   const [transactions, setTransactions] = useState<TransactionItem[]>([])
 
@@ -150,16 +152,8 @@ export default function TransaksiPage() {
 
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const formatNumberWithDots = (val: string): string => {
-    const digits = val.replace(/\D/g, "")
-    if (!digits) return ""
-    return Number(digits).toLocaleString("id-ID")
-  }
-
-  const parseFormattedNumber = (val: string): number => {
-    const digits = val.replace(/\D/g, "")
-    return parseFloat(digits) || 0
-  }
+  const formatNumberWithDots = formatInput
+  const parseFormattedNumber = parseInput
 
   const handleAddTransaction = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -245,7 +239,7 @@ export default function TransaksiPage() {
             </CardHeader>
             <CardContent className="p-0 space-y-1">
               <div className="text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">
-                +Rp {totalIncome.toLocaleString("id-ID")}
+                +{fmt(totalIncome)}
               </div>
               <p className="text-xs text-muted-foreground">Total pemasukan tercatat</p>
             </CardContent>
@@ -262,7 +256,7 @@ export default function TransaksiPage() {
             </CardHeader>
             <CardContent className="p-0 space-y-1">
               <div className="text-2xl font-bold tracking-tight text-rose-600 dark:text-rose-400">
-                -Rp {totalExpense.toLocaleString("id-ID")}
+                -{fmt(totalExpense)}
               </div>
               <p className="text-xs text-muted-foreground">Total pengeluaran tercatat</p>
             </CardContent>
@@ -281,7 +275,7 @@ export default function TransaksiPage() {
               <div className={`text-2xl font-bold tracking-tight ${
                 totalIncome - totalExpense >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
               }`}>
-                Rp {(totalIncome - totalExpense).toLocaleString("id-ID")}
+                {fmt(totalIncome - totalExpense)}
               </div>
               <p className="text-xs text-muted-foreground">Arus kas bersih periode ini</p>
             </CardContent>
@@ -407,7 +401,7 @@ export default function TransaksiPage() {
 
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1">
-                      <label className="text-xs font-semibold text-muted-foreground">Nominal (Rp)</label>
+                      <label className="text-xs font-semibold text-muted-foreground">Nominal ({symbol})</label>
                       <Input
                         type="text"
                         placeholder="0"
@@ -566,7 +560,7 @@ export default function TransaksiPage() {
                       <TableCell className={`px-5 py-3.5 text-right font-bold text-sm ${
                         tx.type === 'in' ? 'text-emerald-600 dark:text-emerald-400' : 'text-foreground'
                       }`}>
-                        {tx.type === "in" ? "+" : "-"}Rp {tx.amount.toLocaleString("id-ID")}
+                        {tx.type === "in" ? "+" : "-"}{fmt(tx.amount)}
                       </TableCell>
                     </TableRow>
                   ))

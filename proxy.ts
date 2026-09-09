@@ -10,6 +10,7 @@ const PROTECTED_PREFIXES = [
   "/scheduled",
   "/finance",
   "/kurs",
+  "/pengaturan",
 ]
 
 // Rute auth: kalau sudah login, jangan biarkan buka halaman ini lagi
@@ -76,6 +77,7 @@ export const config = {
     "/scheduled/:path*",
     "/finance/:path*",
     "/kurs/:path*",
+    "/pengaturan/:path*",
     "/login",
     "/signup",
   ],

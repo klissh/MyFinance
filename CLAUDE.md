@@ -127,6 +127,31 @@ Perbaikan kode di `lib/db.ts` + halaman terkait (typecheck/lint/build lolos):
   creator/payer (RLS) — tampilan tetap "settled" karena diturunkan dari `is_settled`
   semua split.
 
+## Ronde 4 (2026-09-09) — mata uang RM/Rp + reset data
+
+- **`lib/currency.ts`** — sumber tunggal mata uang. `getCurrency()`/`setCurrency()`
+  (localStorage `myfinance_currency`, default **MYR**), `formatMoney()`,
+  `formatAmountInput()`/`parseAmountInput()` (MYR boleh desimal), dan hook reaktif
+  `useMoney()` → `{ fmt, fmtShort, formatInput, parseInput, symbol, currency, setCurrency }`.
+  Toggle: nav-user dropdown ("Mata Uang") + `/pengaturan`. localStorage per-device.
+  Angka yang tersimpan di DB TIDAK diubah — hanya simbol & format.
+- Semua tampilan uang di 11 halaman + `full-calendar` pakai `fmt()`; semua kolom
+  input nominal pakai `formatInput`/`parseInput`. Halaman **`/kurs` sengaja
+  dibiarkan** (memang alat kurs valuta terhadap IDR).
+- Dashboard: kartu konversi kecil membalik arah (RM→Rp / Rp→RM) ikut mata uang aktif.
+- **`/pengaturan`** (baru, di sidebar) — pilih mata uang + **Zona Berbahaya:
+  "Hapus Semua Data"** → `dangerService.wipeAll()`: hapus transaksi/goal/saving_logs/
+  akun/jadwal + kamar yang dibuat (cascade) + keluar dari kamar yang diikuti +
+  bersihkan seluruh cache lokal. `proxy.ts` melindungi `/pengaturan`.
+
+### Keterbatasan mata uang
+
+- Pilihan mata uang per-device (localStorage), belum sinkron antar device / antar
+  anggota kamar. Untuk split bill lintas mata uang tidak ada konversi — asumsinya
+  semua anggota pakai mata uang yang sama.
+- Input desimal MYR: mengetik format IDR ("100.000") saat mode MYR akan diparse
+  sebagai 100 (titik = desimal). Mulai bersih di MYR → ketik "100000" atau "20.50".
+
 ## Yang TIDAK perlu dikerjakan otomatis
 
 - Migrasi data dari Bizmo ke MSU — menunggu tindakan manusia (pemilik Bizmo invite member, atau ekspor file manual).

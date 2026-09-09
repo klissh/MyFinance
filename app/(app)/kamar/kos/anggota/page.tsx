@@ -1,5 +1,6 @@
 "use client"
 
+import { useMoney } from "@/lib/currency"
 import React, { useState, useEffect } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -80,6 +81,7 @@ const safeCopyText = async (text: string): Promise<boolean> => {
 }
 
 export default function AnggotaKosPage() {
+  const { fmt, symbol } = useMoney()
   const router = useRouter()
   const [activeRoom, setActiveRoom] = useState<KamarRoomRecord | null>(null)
   const [members, setMembers] = useState<KamarMemberRecord[]>([])
@@ -328,15 +330,15 @@ export default function AnggotaKosPage() {
                   <div className="text-right">
                     {status === "owes" ? (
                       <Badge className="bg-rose-500/10 text-rose-600 dark:text-rose-400 border-none shadow-none text-xs font-semibold">
-                        Utang Rp {Math.abs(net).toLocaleString("id-ID")}
+                        Utang {fmt(Math.abs(net))}
                       </Badge>
                     ) : status === "is_owed" ? (
                       <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-none shadow-none text-xs font-semibold">
-                        Piutang +Rp {net.toLocaleString("id-ID")}
+                        Piutang +{fmt(net)}
                       </Badge>
                     ) : (
                       <Badge variant="outline" className="text-xs font-normal border-border">
-                        Lunas / Rp 0
+                        Lunas / {symbol} 0
                       </Badge>
                     )}
                   </div>
@@ -386,7 +388,7 @@ export default function AnggotaKosPage() {
 
                     <div className="text-right space-y-1">
                       <div className="font-extrabold text-sm text-foreground">
-                        Rp {item.amount.toLocaleString("id-ID")}
+                        {fmt(item.amount)}
                       </div>
                       <Badge variant="outline" className="text-[10px] font-semibold border-border">
                         Belum Lunas

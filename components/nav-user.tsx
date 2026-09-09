@@ -1,6 +1,7 @@
 "use client"
 
 import { useRouter } from "next/navigation"
+import Link from "next/link"
 import {
   Avatar,
   AvatarFallback,
@@ -22,7 +23,8 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar"
 import { authService } from "@/lib/db"
-import { ChevronsUpDownIcon, SparklesIcon, BadgeCheckIcon, CreditCardIcon, BellIcon, LogOutIcon } from "lucide-react"
+import { useMoney } from "@/lib/currency"
+import { ChevronsUpDownIcon, CoinsIcon, SettingsIcon, LogOutIcon } from "lucide-react"
 
 export function NavUser({
   user,
@@ -35,6 +37,7 @@ export function NavUser({
 }) {
   const { isMobile } = useSidebar()
   const router = useRouter()
+  const { currency, setCurrency } = useMoney()
 
   const handleLogout = async () => {
     // authService.logout() memanggil supabase.auth.signOut() yang otomatis
@@ -84,24 +87,26 @@ export function NavUser({
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem>
-                <SparklesIcon />
-                Upgrade to Pro
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.preventDefault()
+                  setCurrency(currency === "MYR" ? "IDR" : "MYR")
+                }}
+                className="cursor-pointer justify-between gap-6"
+              >
+                <span className="flex items-center gap-2">
+                  <CoinsIcon />
+                  Mata Uang
+                </span>
+                <span className="text-xs font-bold text-muted-foreground">
+                  {currency === "MYR" ? "RM · Ringgit" : "Rp · Rupiah"}
+                </span>
               </DropdownMenuItem>
-            </DropdownMenuGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuGroup>
-              <DropdownMenuItem>
-                <BadgeCheckIcon />
-                Account
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <CreditCardIcon />
-                Billing
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <BellIcon />
-                Notifications
+              <DropdownMenuItem asChild className="cursor-pointer">
+                <Link href="/pengaturan">
+                  <SettingsIcon />
+                  Pengaturan
+                </Link>
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
