@@ -156,8 +156,12 @@ function ledgerRef(kind: LedgerKind, id: string): string {
   return `[#${kind}:${id.replace(/[^a-z0-9]/gi, "").slice(0, 16).toLowerCase()}]`
 }
 const LEDGER_REF_RE = /\s*\[#sb[SPOB]:[a-z0-9]{3,16}\]/gi
-// Penanda model LAMA saja (untuk migrasi otomatis).
-const LEGACY_LEDGER_RE = /\[#sb[POB]:[a-z0-9]{3,16}\]/i
+// Deteksi entri model LAMA (untuk migrasi/purge otomatis). Mencakup:
+//  - penanda bertanda `[#sbP/sbO/sbB:id]` (versi reconcile lama)
+//  - entri TANPA penanda dari settleMyShare paling awal
+//    ("Pelunasan ke X" / notes "Pelunasan bagian saya untuk talangan kos ...")
+const LEGACY_LEDGER_RE =
+  /\[#sb[POB]:[a-z0-9]{3,16}\]|Pelunasan bagian saya untuk talangan kos/i
 export function stripLedgerRef(notes?: string | null): string {
   return (notes || "").replace(LEDGER_REF_RE, "").trim()
 }
