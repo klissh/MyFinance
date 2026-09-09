@@ -53,6 +53,17 @@ import {
   PaginationContent,
   PaginationItem,
 } from "@/components/ui/pagination"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 import { Spinner } from "@/components/ui/spinner"
 import {
   Plus,
@@ -62,6 +73,8 @@ import {
   Receipt,
   Search,
   ArrowRight,
+  Pencil,
+  Trash2,
 } from "lucide-react"
 
 export interface SharedTransaction {
@@ -70,7 +83,10 @@ export interface SharedTransaction {
   category: string
   totalAmount: number
   paidBy: string // Who fronted the cash
+  paidByUserId?: string
+  createdByUserId?: string
   splitBetween: string[] // Who shares the bill
+  splitUserIds?: string[]
   perPersonAmount: number
   myShare: number // How much active user (Abimanyu) owes or is owed (>0 = owes, <0 = is owed, 0 = settled)
   date: string
@@ -83,6 +99,7 @@ export default function TransaksiKosPage() {
   // Anggota kamar diambil dari data kamar yang sebenarnya (tabel room_members).
   const [members, setMembers] = useState<KamarMemberRecord[]>([])
   const [accounts, setAccounts] = useState<FinancialAccountRecord[]>([])
+  const [myUserId, setMyUserId] = useState("")
 
   // Notification Toast
   const [notification, setNotification] = useState<string | null>(null)
@@ -132,6 +149,7 @@ export default function TransaksiKosPage() {
       setAccounts(accList)
 
       const meId = memberList.find((m) => m.isMe)?.userId || memberList[0]?.userId || ""
+      setMyUserId(memberList.find((m) => m.isMe)?.userId || "")
       setNewPaidById(meId)
       setSelectedMemberIds(memberList.map((m) => m.userId || m.id))
       setNewPayerAccount(
@@ -206,6 +224,81 @@ export default function TransaksiKosPage() {
 
     showNotification(
       `Bagianmu ${fmt(amt)} untuk "${targetTx.title}" ditandai lunas ke ${targetTx.paidBy} & tercatat sebagai pengeluaran di transaksi pribadi.`,
+    )
+  }
+
+  // ---- Edit / Delete Split Bill (hanya pembuat) ----
+  const [editTx, setEditTx] = useState<SharedTransaction | null>(null)
+  const [editTitle, setEditTitle] = useState("")
+  const [editCategory, setEditCategory] = useState("Konsumsi Kos")
+  const [editTotal, setEditTotal] = useState("")
+  const [editMemberIds, setEditMemberIds] = useState<string[]>([])
+  const [editPayerAccount, setEditPayerAccount] = useState("")
+  const [isEditing, setIsEditing] = useState(false)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  const iCreated = (tx: SharedTransaction) =>
+    !!myUserId && (tx.createdByUserId === myUserId || (!tx.createdByUserId && tx.paidByUserId === myUserId))
+
+  const openEdit = (tx: SharedTransaction) => {
+    setEditTx(tx)
+    setEditTitle(tx.title)
+    setEditCategory(tx.category)
+    setEditTotal(formatInput(String(tx.totalAmount)))
+    setEditMemberIds(
+      tx.splitUserIds && tx.splitUserIds.length > 0
+        ? tx.splitUserIds
+        : members.map((m) => memberKey(m)),
+    )
+    setEditPayerAccount(newPayerAccount)
+  }
+
+  const toggleEditMember = (id: string) => {
+    setEditMemberIds((prev) =>
+      prev.includes(id)
+        ? prev.length > 1
+          ? prev.filter((x) => x !== id)
+          : prev
+        : [...prev, id],
+    )
+  }
+
+  const handleEditTransaction = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editTx || !editTitle) return
+    const total = parseFormattedNumber(editTotal)
+    if (isNaN(total) || total <= 0 || editMemberIds.length === 0) return
+
+    setIsEditing(true)
+    const payerIsMe = editTx.paidByUserId === myUserId
+    const { error } = await kamarService.updateSharedTransaction(editTx.id, {
+      title: editTitle,
+      category: editCategory,
+      totalAmount: total,
+      splitUserIds: editMemberIds,
+      payerAccount: payerIsMe ? editPayerAccount : undefined,
+    })
+    await kamarService.reconcileRoomLedger(kamarService.getUserRoom()?.id)
+    await reloadTransactions()
+    setIsEditing(false)
+    if (error) {
+      showNotification(`Gagal: ${error}`)
+    } else {
+      setEditTx(null)
+      showNotification(`Split bill "${editTitle}" berhasil diperbarui.`)
+    }
+  }
+
+  const handleDeleteTransaction = async (tx: SharedTransaction) => {
+    setDeletingId(tx.id)
+    const { error } = await kamarService.deleteSharedTransaction(tx.id)
+    await kamarService.reconcileRoomLedger(kamarService.getUserRoom()?.id)
+    await reloadTransactions()
+    setDeletingId(null)
+    showNotification(
+      error
+        ? `Gagal: ${error}`
+        : `Split bill "${tx.title}" dihapus. Pencatatan bagian tiap anggota ikut dibatalkan.`,
     )
   }
 
@@ -579,12 +672,13 @@ export default function TransaksiKosPage() {
                     <TableHead className="px-3.5 py-3 text-xs font-semibold text-muted-foreground whitespace-nowrap">Total Nominal</TableHead>
                     <TableHead className="px-3.5 py-3 text-xs font-semibold text-muted-foreground text-right whitespace-nowrap">Bagian Saya</TableHead>
                     <TableHead className="px-3.5 py-3 text-xs font-semibold text-muted-foreground text-right whitespace-nowrap">Aksi Pelunasan</TableHead>
+                    <TableHead className="px-3.5 py-3 text-xs font-semibold text-muted-foreground text-right whitespace-nowrap">Kelola</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {paginatedTransactions.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center py-8 text-xs text-muted-foreground">
+                      <TableCell colSpan={9} className="text-center py-8 text-xs text-muted-foreground">
                         Tidak ada transaksi kos yang sesuai dengan filter.
                       </TableCell>
                     </TableRow>
@@ -658,6 +752,58 @@ export default function TransaksiKosPage() {
                             </Badge>
                           )}
                         </TableCell>
+                        <TableCell className="px-3.5 py-3 text-right whitespace-nowrap">
+                          {iCreated(tx) ? (
+                            <div className="flex items-center justify-end gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="size-7 text-muted-foreground hover:text-foreground"
+                                onClick={() => openEdit(tx)}
+                                title="Ubah split bill"
+                              >
+                                <Pencil className="size-3.5" />
+                              </Button>
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="size-7 text-muted-foreground hover:text-rose-600"
+                                    disabled={deletingId === tx.id}
+                                    title="Hapus split bill"
+                                  >
+                                    <Trash2 className="size-3.5" />
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle className="text-rose-600 dark:text-rose-400">
+                                      Hapus split bill &quot;{tx.title}&quot;?
+                                    </AlertDialogTitle>
+                                    <AlertDialogDescription className="text-xs leading-relaxed">
+                                      Transaksi bersama ini dihapus untuk semua penghuni. Pencatatan
+                                      pengeluaran &quot;bagian saya&quot; di log pribadi tiap anggota
+                                      ikut dibatalkan & saldo dikembalikan (berlaku saat mereka
+                                      membuka aplikasi).
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel className="text-xs">Batal</AlertDialogCancel>
+                                    <AlertDialogAction
+                                      className="text-xs bg-rose-600 hover:bg-rose-700 text-white"
+                                      onClick={() => handleDeleteTransaction(tx)}
+                                    >
+                                      Ya, Hapus
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            </div>
+                          ) : (
+                            <span className="text-[11px] text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
                       </TableRow>
                     ))
                   )}
@@ -727,6 +873,135 @@ export default function TransaksiKosPage() {
           </div>
         </Card>
       </div>
+
+      {/* Edit Split Bill Dialog */}
+      <Dialog open={!!editTx} onOpenChange={(open) => !open && setEditTx(null)}>
+        <DialogContent className="sm:max-w-md shadow-none border">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base font-bold">
+              <Pencil className="size-5 text-primary" />
+              Ubah Split Bill Kos
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Total & peserta hanya bisa diubah selama belum ada anggota lain yang
+              melunasi bagiannya.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleEditTransaction} className="space-y-4 pt-2">
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-muted-foreground">Keterangan Transaksi / Barang</label>
+              <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} required />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-muted-foreground">Total Nominal ({symbol})</label>
+                <Input
+                  type="text"
+                  value={editTotal}
+                  onChange={(e) => setEditTotal(formatNumberWithDots(e.target.value))}
+                  required
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-muted-foreground">Kategori</label>
+                <Select value={editCategory} onValueChange={setEditCategory}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Kategori" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Konsumsi Kos">Konsumsi Bersama</SelectItem>
+                    <SelectItem value="Kebersihan Kos">Galon & Kebersihan</SelectItem>
+                    <SelectItem value="Utilitas Kos">Listrik & Wifi</SelectItem>
+                    <SelectItem value="Dapur Kos">Gas & Dapur</SelectItem>
+                    {editCategory &&
+                      !["Konsumsi Kos", "Kebersihan Kos", "Utilitas Kos", "Dapur Kos"].includes(editCategory) && (
+                        <SelectItem value={editCategory}>{editCategory}</SelectItem>
+                      )}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {editTx?.paidByUserId === myUserId && accounts.length > 0 && (
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-muted-foreground">
+                  Dibayar Pakai Akun (uang keluar dari sini)
+                </label>
+                <Select value={editPayerAccount} onValueChange={setEditPayerAccount}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Pilih akun" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {accounts.map((a) => (
+                      <SelectItem key={a.id} value={a.name}>
+                        {a.name} ({fmt(a.balance)})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-muted-foreground">Ditanggung Oleh:</label>
+              <div className="grid grid-cols-2 gap-2 p-2.5 rounded-xl border border-border bg-muted/30">
+                {members.map((m) => {
+                  const id = memberKey(m)
+                  const isSelected = editMemberIds.includes(id)
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => toggleEditMember(id)}
+                      className={`py-1.5 px-2.5 rounded-lg text-xs font-semibold flex items-center justify-between border transition-all ${
+                        isSelected
+                          ? "bg-primary/10 border-primary/30 text-primary"
+                          : "bg-card border-border text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <span>{m.name}{m.isMe ? " (Saya)" : ""}</span>
+                      {isSelected && <CheckCircle2 className="size-3.5 text-primary" />}
+                    </button>
+                  )
+                })}
+              </div>
+              <div className="text-[11px] text-muted-foreground">
+                Per orang menanggung:{" "}
+                <strong className="text-foreground">
+                  {fmt(
+                    Math.ceil(
+                      (parseFormattedNumber(editTotal) || 0) / Math.max(1, editMemberIds.length),
+                    ),
+                  )}
+                </strong>
+              </div>
+            </div>
+
+            <DialogFooter className="pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="shadow-none text-xs"
+                onClick={() => setEditTx(null)}
+              >
+                Batal
+              </Button>
+              <Button type="submit" disabled={isEditing} className="shadow-none text-xs">
+                {isEditing ? (
+                  <div className="flex items-center gap-1.5">
+                    <Spinner className="size-3.5" />
+                    <span>Menyimpan...</span>
+                  </div>
+                ) : (
+                  "Simpan Perubahan"
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

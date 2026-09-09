@@ -41,6 +41,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 import { Spinner } from "@/components/ui/spinner"
 import {
   PiggyBank,
@@ -51,6 +62,8 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Pencil,
+  Trash2,
 } from "lucide-react"
 import {
   goalService,
@@ -164,6 +177,50 @@ export default function GoalsPage() {
     setDepositAmount("")
     setIsSubmittingDeposit(false)
     setIsDepositOpen(false)
+  }
+
+  // ---- Edit / Delete Target ----
+  const [editGoal, setEditGoal] = useState<GoalRecord | null>(null)
+  const [editTitle, setEditTitle] = useState("")
+  const [editCategory, setEditCategory] = useState("Gadget & Work")
+  const [editTarget, setEditTarget] = useState("")
+  const [editDeadline, setEditDeadline] = useState("")
+  const [isEditingGoal, setIsEditingGoal] = useState(false)
+  const [deletingGoalId, setDeletingGoalId] = useState<string | null>(null)
+
+  const openEditGoal = (g: GoalRecord) => {
+    setEditGoal(g)
+    setEditTitle(g.title)
+    setEditCategory(g.category)
+    setEditTarget(formatInput(String(g.targetAmount)))
+    setEditDeadline(g.deadline)
+  }
+
+  const handleEditGoal = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editGoal || !editTitle) return
+    const targetNum = parseFormattedNumber(editTarget)
+    if (isNaN(targetNum) || targetNum <= 0) return
+
+    setIsEditingGoal(true)
+    await goalService.update(editGoal.id, {
+      title: editTitle,
+      category: editCategory,
+      targetAmount: targetNum,
+      deadline: editDeadline || "Des 2026",
+    })
+    setGoals(await goalService.getAll())
+    setIsEditingGoal(false)
+    setEditGoal(null)
+    showToastNotification(`Target "${editTitle}" berhasil diperbarui.`)
+  }
+
+  const handleDeleteGoal = async (g: GoalRecord) => {
+    setDeletingGoalId(g.id)
+    await goalService.remove(g.id)
+    setGoals(await goalService.getAll())
+    setDeletingGoalId(null)
+    showToastNotification(`Target "${g.title}" dihapus.`)
   }
 
   // Dynamic Calculations from Database
@@ -568,11 +625,11 @@ export default function GoalsPage() {
                       </div>
                     </CardContent>
 
-                    <CardFooter className="p-0 pt-3 border-t border-border">
+                    <CardFooter className="p-0 pt-3 border-t border-border flex items-center gap-1.5">
                       <Button
                         variant="outline"
                         size="sm"
-                        className="w-full text-xs shadow-none border-border h-8 hover:bg-muted"
+                        className="flex-1 text-xs shadow-none border-border h-8 hover:bg-muted"
                         onClick={() => {
                           setSelectedGoalId(g.id)
                           setIsDepositOpen(true)
@@ -580,6 +637,49 @@ export default function GoalsPage() {
                       >
                         <Plus className="size-3.5 mr-1.5" /> Setor Tabungan
                       </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 shrink-0 text-muted-foreground hover:text-foreground border border-border"
+                        onClick={() => openEditGoal(g)}
+                        title="Ubah target"
+                      >
+                        <Pencil className="size-3.5" />
+                      </Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-8 shrink-0 text-muted-foreground hover:text-rose-600 border border-border"
+                            disabled={deletingGoalId === g.id}
+                            title="Hapus target"
+                          >
+                            <Trash2 className="size-3.5" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle className="text-rose-600 dark:text-rose-400">
+                              Hapus target &quot;{g.title}&quot;?
+                            </AlertDialogTitle>
+                            <AlertDialogDescription className="text-xs leading-relaxed">
+                              Target dan riwayat setorannya dihapus permanen. Transaksi
+                              &quot;Setoran Tabungan&quot; yang sudah tercatat di log keuangan
+                              pribadi <strong>tetap ada</strong> (uang memang sudah berpindah).
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel className="text-xs">Batal</AlertDialogCancel>
+                            <AlertDialogAction
+                              className="text-xs bg-rose-600 hover:bg-rose-700 text-white"
+                              onClick={() => handleDeleteGoal(g)}
+                            >
+                              Ya, Hapus
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </CardFooter>
                   </Card>
                 )
@@ -643,6 +743,85 @@ export default function GoalsPage() {
           )}
         </div>
       </div>
+
+      {/* Edit Target Dialog */}
+      <Dialog open={!!editGoal} onOpenChange={(open) => !open && setEditGoal(null)}>
+        <DialogContent className="sm:max-w-md shadow-none border">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base font-bold">
+              <Pencil className="size-5 text-primary" />
+              Ubah Target Impian
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Jumlah yang sudah terkumpul tidak berubah — status progres dihitung ulang.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleEditGoal} className="space-y-4 pt-2">
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-muted-foreground">Nama Barang / Target Impian</label>
+              <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} required />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-muted-foreground">Kategori Target</label>
+                <Select value={editCategory} onValueChange={setEditCategory}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Kategori" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Gadget & Work">Gadget & Kerja</SelectItem>
+                    <SelectItem value="Keuangan & Safe">Dana Darurat</SelectItem>
+                    <SelectItem value="Travel & Leisure">Travel & Liburan</SelectItem>
+                    <SelectItem value="Fashion & Hobby">Hobi & Fashion</SelectItem>
+                    <SelectItem value="Lainnya">Lainnya</SelectItem>
+                    {editCategory &&
+                      !["Gadget & Work", "Keuangan & Safe", "Travel & Leisure", "Fashion & Hobby", "Lainnya"].includes(
+                        editCategory,
+                      ) && <SelectItem value={editCategory}>{editCategory}</SelectItem>}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-muted-foreground">Target Deadline</label>
+                <Input value={editDeadline} onChange={(e) => setEditDeadline(e.target.value)} required />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-muted-foreground">Nominal Target ({symbol})</label>
+              <Input
+                type="text"
+                value={editTarget}
+                onChange={(e) => setEditTarget(formatNumberWithDots(e.target.value))}
+                required
+              />
+            </div>
+
+            <DialogFooter className="pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="shadow-none text-xs"
+                onClick={() => setEditGoal(null)}
+              >
+                Batal
+              </Button>
+              <Button type="submit" disabled={isEditingGoal} className="shadow-none text-xs">
+                {isEditingGoal ? (
+                  <div className="flex items-center gap-1.5">
+                    <Spinner className="size-3.5" />
+                    <span>Menyimpan...</span>
+                  </div>
+                ) : (
+                  "Simpan Perubahan"
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

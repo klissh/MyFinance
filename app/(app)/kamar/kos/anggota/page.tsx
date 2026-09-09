@@ -34,6 +34,18 @@ import {
   DialogClose,
 } from "@/components/ui/dialog"
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
+import { Spinner } from "@/components/ui/spinner"
+import {
   Users,
   Copy,
   CheckCircle2,
@@ -42,6 +54,8 @@ import {
   HandCoins,
   Plus,
   Trash2,
+  UserMinus,
+  LogOut,
 } from "lucide-react"
 import {
   kamarService,
@@ -155,6 +169,37 @@ export default function AnggotaKosPage() {
     }, 1000)
   }
 
+  const iAmKetua = members.find((m) => m.isMe)?.role === "Ketua Kos"
+  const [removingId, setRemovingId] = useState<string | null>(null)
+  const [isLeaving, setIsLeaving] = useState(false)
+
+  const reloadMembers = async () => {
+    const room = kamarService.getUserRoom()
+    if (!room) return
+    const [memList, debts] = await Promise.all([
+      kamarService.getRoomMembers(room.id),
+      kamarService.getDebtSummary(),
+    ])
+    setMembers(memList)
+    setDebtMatrix(debts)
+  }
+
+  const handleRemoveMember = async (m: KamarMemberRecord) => {
+    setRemovingId(m.id)
+    const { error } = await kamarService.removeMember(m.id)
+    await reloadMembers()
+    setRemovingId(null)
+    showNotification(error ? `Gagal: ${error}` : `${m.name} dikeluarkan dari kamar kos.`)
+  }
+
+  const handleLeaveRoom = async () => {
+    setIsLeaving(true)
+    await kamarService.leaveRoom()
+    setIsLeaving(false)
+    showNotification("Kamu keluar dari kamar kos ini.")
+    setTimeout(() => router.push("/kamar/baru"), 1000)
+  }
+
   if (!isLoading && !activeRoom) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center p-8 bg-background min-h-screen">
@@ -249,9 +294,47 @@ export default function AnggotaKosPage() {
               Undang Anggota
             </Button>
 
+            {!iAmKetua && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button size="sm" variant="outline" className="text-xs shadow-none border-border" disabled={isLeaving}>
+                    {isLeaving ? (
+                      <span className="flex items-center gap-1.5"><Spinner className="size-3.5" /> Keluar...</span>
+                    ) : (
+                      <><LogOut className="size-4 mr-1.5" /> Keluar dari Kamar</>
+                    )}
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Keluar dari kamar kos ini?</AlertDialogTitle>
+                    <AlertDialogDescription className="text-xs leading-relaxed">
+                      Kamu akan berhenti jadi anggota &quot;{activeRoom?.name}&quot;. Transaksi
+                      split bill & utang-piutang yang belum lunas sebaiknya diselesaikan dulu.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel className="text-xs">Batal</AlertDialogCancel>
+                    <AlertDialogAction
+                      className="text-xs bg-rose-600 hover:bg-rose-700 text-white"
+                      onClick={handleLeaveRoom}
+                    >
+                      Ya, Keluar
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+
             <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
               <DialogTrigger asChild>
-                <Button size="sm" variant="destructive" className="text-xs shadow-none">
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  className="text-xs shadow-none"
+                  disabled={!iAmKetua}
+                  title={iAmKetua ? undefined : "Hanya Ketua Kos yang bisa membubarkan kamar"}
+                >
                   <Trash2 className="size-4 mr-1.5" /> Hapus Kamar
                 </Button>
               </DialogTrigger>
@@ -327,19 +410,67 @@ export default function AnggotaKosPage() {
                     </div>
                   </div>
 
-                  <div className="text-right">
-                    {status === "owes" ? (
-                      <Badge className="bg-rose-500/10 text-rose-600 dark:text-rose-400 border-none shadow-none text-xs font-semibold">
-                        Utang {fmt(Math.abs(net))}
-                      </Badge>
-                    ) : status === "is_owed" ? (
-                      <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-none shadow-none text-xs font-semibold">
-                        Piutang +{fmt(net)}
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="text-xs font-normal border-border">
-                        Lunas / {symbol} 0
-                      </Badge>
+                  <div className="flex items-center gap-2">
+                    <div className="text-right">
+                      {status === "owes" ? (
+                        <Badge className="bg-rose-500/10 text-rose-600 dark:text-rose-400 border-none shadow-none text-xs font-semibold">
+                          Utang {fmt(Math.abs(net))}
+                        </Badge>
+                      ) : status === "is_owed" ? (
+                        <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-none shadow-none text-xs font-semibold">
+                          Piutang +{fmt(net)}
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-xs font-normal border-border">
+                          Lunas / {symbol} 0
+                        </Badge>
+                      )}
+                    </div>
+
+                    {iAmKetua && !m.isMe && (
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-7 shrink-0 text-muted-foreground hover:text-rose-600"
+                            disabled={removingId === m.id}
+                            title={`Keluarkan ${m.name}`}
+                          >
+                            <UserMinus className="size-3.5" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle className="text-rose-600 dark:text-rose-400">
+                              Keluarkan {m.name} dari kamar?
+                            </AlertDialogTitle>
+                            <AlertDialogDescription className="text-xs leading-relaxed">
+                              {m.name} tidak lagi jadi anggota kamar ini.
+                              {status !== "clear" && (
+                                <>
+                                  {" "}
+                                  <strong>
+                                    Perhatian: posisi utang-piutangnya belum lunas (
+                                    {status === "owes" ? "utang" : "piutang"} {fmt(Math.abs(net))}
+                                    ).
+                                  </strong>{" "}
+                                  Sebaiknya selesaikan dulu.
+                                </>
+                              )}
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel className="text-xs">Batal</AlertDialogCancel>
+                            <AlertDialogAction
+                              className="text-xs bg-rose-600 hover:bg-rose-700 text-white"
+                              onClick={() => handleRemoveMember(m)}
+                            >
+                              Ya, Keluarkan
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     )}
                   </div>
                 </div>

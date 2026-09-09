@@ -152,6 +152,44 @@ Perbaikan kode di `lib/db.ts` + halaman terkait (typecheck/lint/build lolos):
 - Input desimal MYR: mengetik format IDR ("100.000") saat mode MYR akan diparse
   sebagai 100 (titik = desimal). Mulai bersih di MYR → ketik "100000" atau "20.50".
 
+## Ronde 5 (2026-09-09) — tombol Edit & Hapus di semua entitas
+
+RLS baru (migrasi `add_edit_delete_policies_room_entities`): `room_transactions`
+DELETE (creator), `room_transaction_splits` DELETE (tx creator), `room_requirements`
+UPDATE+DELETE (anggota kamar), `room_members` DELETE (Ketua Kos keluarkan anggota lain).
+
+- **Transaksi** (`/transaksi`): `transactionService.update()` (menyeimbangkan saldo:
+  efek lama dibatalkan, efek baru diterapkan, termasuk saat akun diganti) & `remove()`.
+  Transaksi **auto** (split bill kos, setoran tabungan, bayar iuran/tagihan) dikunci
+  di UI — ditandai `[#auto]` / `[#sbS:]` di notes; helper `isSystemTransaction(notes)`.
+  `LEDGER_REF_RE` & `stripLedgerRef` juga menyaring `[#auto]`.
+- **Sumber dana** (`/finance`): `accountService.update()` / `remove()`. Hapus akun →
+  `transactions.account_id` jadi NULL otomatis (FK `ON DELETE SET NULL`).
+- **Target nabung** (`/goals`): `goalService.update()` (status dihitung ulang) /
+  `remove()` (cascade `saving_logs`; transaksi "Setoran Tabungan" tetap ada).
+- **Jadwal tagihan** (`/scheduled`): `scheduledService.update()` / `remove()`.
+- **Split bill kos** (`/kamar/kos`): `kamarService.updateSharedTransaction()` — hanya
+  creator; total & peserta bisa diubah selama belum ada anggota lain yang melunasi
+  (baris split dibuat ulang), kalau sudah → hanya judul/kategori.
+  `deleteSharedTransaction()` — hanya creator. `SharedTransactionRecord` bawa
+  `createdByUserId` + `splitUserIds`.
+- **Kebutuhan bulanan** (`/kamar/kos/kebutuhan`): `updateRequirement()` /
+  `deleteRequirement()` (cascade `room_requirement_payments`).
+- **Anggota kos** (`/kamar/kos/anggota`): `removeMember(rowId)` (Ketua Kos) +
+  `leaveRoom()` kini benar-benar menghapus baris `room_members` sendiri. "Hapus
+  Kamar" dibatasi ke Ketua Kos; anggota biasa dapat "Keluar dari Kamar".
+- **Rekonsiliasi**: `reconcileRoomLedger` hitung `validSbKeys` dari split bill yang
+  masih ada → `transactionService._purgeSbOrphans()` buang entri `[#sbS:*]` yatim
+  (split bill dihapus/diedit) + kembalikan saldo. Idempoten, jalan tiap load.
+
+### Keterbatasan Ronde 5
+
+- Split bill yang dihapus/diedit creator baru tersinkron di ledger anggota lain saat
+  mereka membuka aplikasi (reconcile jalan saat load). Tidak ada push realtime.
+- Menghapus split bill membatalkan pencatatan "bagian saya" tiap anggota (termasuk
+  yang sudah melunasi) — sesuai model "transaksi ini tidak pernah terjadi".
+- Tabel "Riwayat Mutasi" di `/finance` tetap read-only — kelola lewat `/transaksi`.
+
 ## Yang TIDAK perlu dikerjakan otomatis
 
 - Migrasi data dari Bizmo ke MSU — menunggu tindakan manusia (pemilik Bizmo invite member, atau ekspor file manual).

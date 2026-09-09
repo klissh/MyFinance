@@ -2,7 +2,13 @@
 
 import { useMoney } from "@/lib/currency"
 import React, { useState, useEffect } from "react"
-import { transactionService, scheduledService, ScheduledBillRecord } from "@/lib/db"
+import {
+  transactionService,
+  scheduledService,
+  accountService,
+  ScheduledBillRecord,
+  FinancialAccountRecord,
+} from "@/lib/db"
 import { cn } from "@/lib/utils"
 import {
   Breadcrumb,
@@ -54,6 +60,17 @@ import {
 } from "@/components/ui/popover"
 import { Calendar } from "@/components/ui/calendar"
 import { FullCalendar, CalendarTransaction } from "@/components/full-calendar"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 import { Spinner } from "@/components/ui/spinner"
 import {
   Calendar as CalendarIcon,
@@ -62,19 +79,28 @@ import {
   TrendingDown,
   Sparkles,
   ArrowRight,
+  Pencil,
+  Trash2,
 } from "lucide-react"
 
 export default function ScheduledPage() {
   const { fmt, formatInput, parseInput, symbol } = useMoney()
   const [calendarTransactions, setCalendarTransactions] = useState<CalendarTransaction[]>([])
   const [scheduledBills, setScheduledBills] = useState<ScheduledBillRecord[]>([])
+  const [accounts, setAccounts] = useState<FinancialAccountRecord[]>([])
+
+  const refreshBills = React.useCallback(async () => {
+    setScheduledBills(await scheduledService.getAll())
+  }, [])
 
   useEffect(() => {
     async function loadData() {
-      const [txs, bills] = await Promise.all([
+      const [txs, bills, accs] = await Promise.all([
         transactionService.getAll(),
         scheduledService.getAll(),
+        accountService.getAll(),
       ])
+      setAccounts(accs)
       const formatted = txs.map((tx, idx) => ({
         ...tx,
         hour: 9 + (idx % 10),
@@ -175,6 +201,59 @@ export default function ScheduledPage() {
       `Pembayaran "${bill.title}" sebesar ${fmt(bill.amount)} berhasil & otomatis dicatat ke log Transaksi!`
     )
     setPayingId(null)
+  }
+
+  // ---- Edit / Delete Jadwal ----
+  const [editBill, setEditBill] = useState<ScheduledBillRecord | null>(null)
+  const [editTitle, setEditTitle] = useState("")
+  const [editAmount, setEditAmount] = useState("")
+  const [editCategory, setEditCategory] = useState("Kamar Kos")
+  const [editAccount, setEditAccount] = useState("")
+  const [editDate, setEditDate] = useState<Date>(new Date())
+  const [editNotes, setEditNotes] = useState("")
+  const [isEditing, setIsEditing] = useState(false)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  const openEdit = (b: ScheduledBillRecord) => {
+    setEditBill(b)
+    setEditTitle(b.title)
+    setEditAmount(formatInput(String(b.amount)))
+    setEditCategory(b.category)
+    setEditAccount(b.account)
+    const d = new Date(b.date)
+    setEditDate(isNaN(d.getTime()) ? new Date() : d)
+    setEditNotes(b.notes || "")
+  }
+
+  const handleEditBill = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editBill || !editTitle) return
+    const amt = parseInput(editAmount)
+    if (isNaN(amt) || amt <= 0) return
+
+    setIsEditing(true)
+    const iso = `${editDate.getFullYear()}-${String(editDate.getMonth() + 1).padStart(2, "0")}-${String(editDate.getDate()).padStart(2, "0")}`
+    await scheduledService.update(editBill.id, {
+      title: editTitle,
+      amount: amt,
+      category: editCategory,
+      account: editAccount,
+      date: iso,
+      notes: editNotes,
+    })
+    await refreshBills()
+    setIsEditing(false)
+    setEditBill(null)
+    showNotification(`Jadwal "${editTitle}" berhasil diperbarui.`)
+  }
+
+  const handleDeleteBill = async (b: ScheduledBillRecord) => {
+    setDeletingId(b.id)
+    await scheduledService.remove(b.id)
+    await refreshBills()
+    setCalendarTransactions((prev) => prev.filter((t) => t.id !== b.id))
+    setDeletingId(null)
+    showNotification(`Jadwal "${b.title}" dihapus.`)
   }
 
   const pendingBills = scheduledBills.filter((b) => b.status === "pending")
@@ -468,12 +547,13 @@ export default function ScheduledPage() {
                   <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Sumber Dana</TableHead>
                   <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Jumlah Tagihan</TableHead>
                   <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground text-center">Aksi Pembayaran</TableHead>
+                  <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground text-right">Kelola</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {scheduledBills.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="h-32 text-center text-muted-foreground text-xs">
+                    <TableCell colSpan={7} className="h-32 text-center text-muted-foreground text-xs">
                       Belum ada jadwal tagihan atau pembayaran rutin yang dicatat.
                     </TableCell>
                   </TableRow>
@@ -523,6 +603,54 @@ export default function ScheduledPage() {
                           </Button>
                         )}
                       </TableCell>
+                      <TableCell className="px-5 py-3.5 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-7 text-muted-foreground hover:text-foreground"
+                            onClick={() => openEdit(b)}
+                            title="Ubah jadwal"
+                          >
+                            <Pencil className="size-3.5" />
+                          </Button>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="size-7 text-muted-foreground hover:text-rose-600"
+                                disabled={deletingId === b.id}
+                                title="Hapus jadwal"
+                              >
+                                <Trash2 className="size-3.5" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle className="text-rose-600 dark:text-rose-400">
+                                  Hapus jadwal &quot;{b.title}&quot;?
+                                </AlertDialogTitle>
+                                <AlertDialogDescription className="text-xs leading-relaxed">
+                                  Jadwal tagihan ini dihapus permanen.
+                                  {b.status === "paid" && (
+                                    <> Transaksi pembayaran yang sudah tercatat di log tetap ada.</>
+                                  )}
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel className="text-xs">Batal</AlertDialogCancel>
+                                <AlertDialogAction
+                                  className="text-xs bg-rose-600 hover:bg-rose-700 text-white"
+                                  onClick={() => handleDeleteBill(b)}
+                                >
+                                  Ya, Hapus
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
+                      </TableCell>
                     </TableRow>
                   ))
                 )}
@@ -531,6 +659,142 @@ export default function ScheduledPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Edit Jadwal Dialog */}
+      <Dialog open={!!editBill} onOpenChange={(open) => !open && setEditBill(null)}>
+        <DialogContent className="sm:max-w-md shadow-none border">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base font-bold">
+              <Pencil className="size-5 text-primary" />
+              Ubah Jadwal Tagihan
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Untuk tagihan yang belum dibayar. Yang sudah lunas: ubah di sini tidak
+              mengubah transaksi yang sudah tercatat.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleEditBill} className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-foreground">Nama Tagihan / Acara</label>
+              <Input
+                className="text-xs shadow-none"
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground">Jumlah Tagihan ({symbol})</label>
+                <Input
+                  type="text"
+                  className="text-xs shadow-none"
+                  value={editAmount}
+                  onChange={(e) => setEditAmount(formatNumberWithDots(e.target.value))}
+                  required
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground">Kategori</label>
+                <Select value={editCategory} onValueChange={setEditCategory}>
+                  <SelectTrigger className="text-xs shadow-none">
+                    <SelectValue placeholder="Pilih Kategori" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Kamar Kos" className="text-xs">Kamar Kos</SelectItem>
+                    <SelectItem value="Konsumsi" className="text-xs">Konsumsi</SelectItem>
+                    <SelectItem value="Transportasi" className="text-xs">Transportasi</SelectItem>
+                    <SelectItem value="Utilitas" className="text-xs">Utilitas & Listrik</SelectItem>
+                    <SelectItem value="Hiburan" className="text-xs">Hiburan & Subskripsi</SelectItem>
+                    {editCategory &&
+                      !["Kamar Kos", "Konsumsi", "Transportasi", "Utilitas", "Hiburan"].includes(editCategory) && (
+                        <SelectItem value={editCategory} className="text-xs">{editCategory}</SelectItem>
+                      )}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground">Sumber Dana Default</label>
+                <Select value={editAccount} onValueChange={setEditAccount}>
+                  <SelectTrigger className="text-xs shadow-none">
+                    <SelectValue placeholder="Pilih Akun" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {accounts.map((a) => (
+                      <SelectItem key={a.id} value={a.name} className="text-xs">
+                        {a.name}
+                      </SelectItem>
+                    ))}
+                    {editAccount && !accounts.some((a) => a.name === editAccount) && (
+                      <SelectItem value={editAccount} className="text-xs">{editAccount}</SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground">Tanggal Jatuh Tempo</label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start text-left font-normal text-xs shadow-none"
+                    >
+                      <CalendarIcon className="mr-2 size-3.5" />
+                      {editDate.toLocaleDateString("id-ID", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                      })}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0 shadow-none border" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={editDate}
+                      onSelect={(date) => date && setEditDate(date)}
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-foreground">Catatan Tambahan (Opsional)</label>
+              <Textarea
+                className="text-xs shadow-none resize-none h-16"
+                value={editNotes}
+                onChange={(e) => setEditNotes(e.target.value)}
+              />
+            </div>
+
+            <DialogFooter className="pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="shadow-none text-xs"
+                onClick={() => setEditBill(null)}
+              >
+                Batal
+              </Button>
+              <Button type="submit" disabled={isEditing} className="shadow-none text-xs">
+                {isEditing ? (
+                  <div className="flex items-center gap-1.5">
+                    <Spinner className="size-3.5" />
+                    <span>Menyimpan...</span>
+                  </div>
+                ) : (
+                  "Simpan Perubahan"
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

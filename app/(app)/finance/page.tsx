@@ -45,6 +45,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 import { CreditCard } from "@/components/shared-assets/credit-card/credit-card"
 import {
   Wallet,
@@ -53,6 +64,8 @@ import {
   Plus,
   ArrowLeftRight,
   CheckCircle2,
+  Pencil,
+  Trash2,
 } from "lucide-react"
 import { Spinner } from "@/components/ui/spinner"
 import {
@@ -242,6 +255,85 @@ export default function FinancePage() {
     setTransferAmount("")
     setIsSubmittingTransfer(false)
     setIsTransferDialogOpen(false)
+  }
+
+  // ---- Edit / Delete Sumber Dana ----
+  const [editAcc, setEditAcc] = useState<FinancialAccountRecord | null>(null)
+  const [editName, setEditName] = useState("")
+  const [editType, setEditType] = useState("Rekening Utama")
+  const [editBalance, setEditBalance] = useState("")
+  const [editNumber, setEditNumber] = useState("")
+  const [editHolder, setEditHolder] = useState("")
+  const [editDesign, setEditDesign] = useState<FinancialAccountRecord["cardDesignType"]>("brand-dark")
+  const [isEditingAcc, setIsEditingAcc] = useState(false)
+  const [deletingAccId, setDeletingAccId] = useState<string | null>(null)
+
+  const openEditAcc = (acc: FinancialAccountRecord) => {
+    setEditAcc(acc)
+    setEditName(acc.name)
+    setEditType(acc.type)
+    setEditBalance(formatInput(String(acc.balance)))
+    setEditNumber(acc.cardNumber)
+    setEditHolder(acc.cardHolder)
+    setEditDesign(acc.cardDesignType)
+  }
+
+  const handleEditAccount = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editAcc || !editName) return
+    const parsedBalance = parseFormattedNumber(editBalance)
+    if (isNaN(parsedBalance)) return
+
+    setIsEditingAcc(true)
+    await accountService.update(editAcc.id, {
+      name: editName,
+      type: editType,
+      balance: parsedBalance,
+      cardNumber: editNumber || "**** **** 0000",
+      cardHolder: (editHolder || "USER").toUpperCase(),
+      cardDesignType: editDesign,
+    })
+    const [updatedAccs, updatedTxs] = await Promise.all([
+      accountService.getAll(),
+      transactionService.getAll(),
+    ])
+    setAccounts(updatedAccs)
+    setMutations(
+      updatedTxs.map((t) => ({
+        id: t.id,
+        accountName: t.account,
+        title: t.title,
+        type: t.type,
+        amount: t.amount,
+        date: t.formattedDate,
+      })),
+    )
+    setIsEditingAcc(false)
+    setEditAcc(null)
+    showNotification(`Sumber dana "${editName}" berhasil diperbarui.`)
+  }
+
+  const handleDeleteAccount = async (acc: FinancialAccountRecord) => {
+    setDeletingAccId(acc.id)
+    await accountService.remove(acc.id)
+    const [updatedAccs, updatedTxs] = await Promise.all([
+      accountService.getAll(),
+      transactionService.getAll(),
+    ])
+    setAccounts(updatedAccs)
+    setMutations(
+      updatedTxs.map((t) => ({
+        id: t.id,
+        accountName: t.account,
+        title: t.title,
+        type: t.type,
+        amount: t.amount,
+        date: t.formattedDate,
+      })),
+    )
+    if (selectedAccountFilter === acc.name) setSelectedAccountFilter("all")
+    setDeletingAccId(null)
+    showNotification(`Sumber dana "${acc.name}" dihapus.`)
   }
 
   const totalBalance = accounts.reduce((sum, a) => sum + a.balance, 0)
@@ -594,18 +686,63 @@ export default function FinancePage() {
                     </div>
                   </div>
 
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="w-full text-xs text-muted-foreground hover:text-foreground h-8 border border-border/50"
-                    onClick={() => {
-                      setSelectedAccountFilter(acc.name)
-                      showNotification(`Filter mutasi disesuaikan ke "${acc.name}"`)
-                      document.getElementById("mutasi-section")?.scrollIntoView({ behavior: "smooth" })
-                    }}
-                  >
-                    Mutasi Akun
-                  </Button>
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="flex-1 text-xs text-muted-foreground hover:text-foreground h-8 border border-border/50"
+                      onClick={() => {
+                        setSelectedAccountFilter(acc.name)
+                        showNotification(`Filter mutasi disesuaikan ke "${acc.name}"`)
+                        document.getElementById("mutasi-section")?.scrollIntoView({ behavior: "smooth" })
+                      }}
+                    >
+                      Mutasi Akun
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-8 shrink-0 text-muted-foreground hover:text-foreground border border-border/50"
+                      onClick={() => openEditAcc(acc)}
+                      title="Ubah sumber dana"
+                    >
+                      <Pencil className="size-3.5" />
+                    </Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-8 shrink-0 text-muted-foreground hover:text-rose-600 border border-border/50"
+                          disabled={deletingAccId === acc.id}
+                          title="Hapus sumber dana"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle className="text-rose-600 dark:text-rose-400">
+                            Hapus sumber dana &quot;{acc.name}&quot;?
+                          </AlertDialogTitle>
+                          <AlertDialogDescription className="text-xs leading-relaxed">
+                            Akun ini akan dihapus permanen. Transaksi yang pernah memakainya{" "}
+                            <strong>tetap tersimpan</strong>, tapi kolom sumber dananya menjadi
+                            &quot;—&quot; dan saldonya tidak lagi terhitung di total.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel className="text-xs">Batal</AlertDialogCancel>
+                          <AlertDialogAction
+                            className="text-xs bg-rose-600 hover:bg-rose-700 text-white"
+                            onClick={() => handleDeleteAccount(acc)}
+                          >
+                            Ya, Hapus
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
                 </Card>
               ))
             )}
@@ -703,6 +840,110 @@ export default function FinancePage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Edit Sumber Dana Dialog */}
+      <Dialog open={!!editAcc} onOpenChange={(open) => !open && setEditAcc(null)}>
+        <DialogContent className="sm:max-w-md shadow-none border">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base font-bold">
+              <Pencil className="size-5 text-primary" />
+              Ubah Sumber Dana
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Mengubah saldo di sini menetapkan nilai baru secara langsung (bukan mutasi).
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleEditAccount} className="space-y-4 pt-2">
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-muted-foreground">Nama Akun / Bank</label>
+              <Input value={editName} onChange={(e) => setEditName(e.target.value)} required />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-muted-foreground">Tipe Akun</label>
+                <Select value={editType} onValueChange={setEditType}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Tipe" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Rekening Utama">Rekening Bank</SelectItem>
+                    <SelectItem value="Tabungan Target">Tabungan</SelectItem>
+                    <SelectItem value="Dompet Fisik">Dompet Tunai</SelectItem>
+                    <SelectItem value="E-Wallet Digital">E-Wallet</SelectItem>
+                    {editType &&
+                      !["Rekening Utama", "Tabungan Target", "Dompet Fisik", "E-Wallet Digital"].includes(
+                        editType,
+                      ) && <SelectItem value={editType}>{editType}</SelectItem>}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-muted-foreground">Desain Kartu</label>
+                <Select
+                  value={editDesign}
+                  onValueChange={(val) => setEditDesign(val as FinancialAccountRecord["cardDesignType"])}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Warna Kartu" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="brand-dark">Dark Premium</SelectItem>
+                    <SelectItem value="transparent-gradient">Gradient Glass</SelectItem>
+                    <SelectItem value="salmon-strip">Salmon Peach</SelectItem>
+                    <SelectItem value="gray-dark">Charcoal Dark</SelectItem>
+                    <SelectItem value="brand-light">Classic Light</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-muted-foreground">Saldo Saat Ini ({symbol})</label>
+                <Input
+                  type="text"
+                  value={editBalance}
+                  onChange={(e) => setEditBalance(formatNumberWithDots(e.target.value))}
+                  required
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-muted-foreground">Nomor Kartu/Akun</label>
+                <Input value={editNumber} onChange={(e) => setEditNumber(e.target.value)} />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-muted-foreground">Nama Pemilik Kartu</label>
+              <Input value={editHolder} onChange={(e) => setEditHolder(e.target.value)} />
+            </div>
+
+            <DialogFooter className="pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="shadow-none text-xs"
+                onClick={() => setEditAcc(null)}
+              >
+                Batal
+              </Button>
+              <Button type="submit" disabled={isEditingAcc} className="shadow-none text-xs">
+                {isEditingAcc ? (
+                  <div className="flex items-center gap-1.5">
+                    <Spinner className="size-3.5" />
+                    <span>Menyimpan...</span>
+                  </div>
+                ) : (
+                  "Simpan Perubahan"
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

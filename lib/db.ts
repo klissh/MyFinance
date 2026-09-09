@@ -61,7 +61,9 @@ export interface SharedTransactionRecord {
   totalAmount: number
   paidBy: string
   paidByUserId?: string
+  createdByUserId?: string
   splitBetween: string[]
+  splitUserIds?: string[]
   perPersonAmount: number
   /** >0 = saya berutang segini; <0 = orang lain berutang ke saya; 0 = lunas / tidak terlibat. */
   myShare: number
@@ -155,7 +157,17 @@ type LedgerKind = "sbS"
 function ledgerRef(kind: LedgerKind, id: string): string {
   return `[#${kind}:${id.replace(/[^a-z0-9]/gi, "").slice(0, 16).toLowerCase()}]`
 }
-const LEDGER_REF_RE = /\s*\[#sb[SPOB]:[a-z0-9]{3,16}\]/gi
+const LEDGER_REF_RE = /\s*\[#(?:sb[SPOB]:[a-z0-9]{3,16}|auto)\]/gi
+// Versi non-global untuk `.test()` (LEDGER_REF_RE punya flag /g → lastIndex stateful).
+const SYSTEM_TX_RE = /\[#(?:sb[SPOB]:[a-z0-9]{3,16}|auto)\]/i
+/**
+ * True bila transaksi pribadi ini dibuat OTOMATIS oleh sistem (bagian split bill
+ * kos, setoran tabungan, bayar iuran/tagihan). Di UI tombol edit/hapus-nya
+ * dikunci — koreksinya lewat fitur sumbernya.
+ */
+export function isSystemTransaction(notes?: string | null): boolean {
+  return SYSTEM_TX_RE.test(notes || "")
+}
 // Deteksi entri model LAMA (untuk migrasi/purge otomatis). Mencakup:
 //  - penanda bertanda `[#sbP/sbO/sbB:id]` (versi reconcile lama)
 //  - entri TANPA penanda dari settleMyShare paling awal
@@ -612,6 +624,101 @@ export const accountService = {
     const next = Math.round((acc.balance + delta) * 100) / 100
     await this.updateBalanceByName(name, next)
   },
+
+  /** Ubah detail satu sumber dana (nama, tipe, saldo, desain, detail kartu). */
+  async update(
+    id: string,
+    patch: Partial<Pick<
+      FinancialAccountRecord,
+      "name" | "type" | "balance" | "cardNumber" | "cardHolder" | "expiration" | "cardDesignType"
+    >>,
+  ): Promise<void> {
+    const list = await this.getAll()
+    const before = list.find((a) => a.id === id)
+    if (!before) return
+
+    if (isSupabaseConfigured && supabase && id.includes("-")) {
+      try {
+        const upd: Record<string, unknown> = {}
+        if (patch.name !== undefined) upd.name = patch.name
+        if (patch.type !== undefined) upd.type = patch.type
+        if (patch.balance !== undefined) upd.balance = patch.balance
+        if (patch.cardDesignType !== undefined) upd.color = patch.cardDesignType
+        if (Object.keys(upd).length) {
+          await supabase.from("accounts").update(upd).eq("id", id)
+        }
+      } catch (err) {
+        console.warn("account update exception:", err)
+      }
+    }
+
+    writeCardMeta(id, {
+      cardNumber: patch.cardNumber ?? before.cardNumber,
+      cardHolder: patch.cardHolder ?? before.cardHolder,
+      expiration: patch.expiration ?? before.expiration,
+    })
+
+    const updated = list.map((a) =>
+      a.id === id
+        ? {
+            ...a,
+            ...patch,
+            accountCategory: patch.type ? deriveAccountCategory(patch.type) : a.accountCategory,
+          }
+        : a,
+    )
+    if (typeof window !== "undefined") {
+      localStorage.setItem(
+        getUserStorageKey(BASE_STORAGE_KEYS.ACCOUNTS),
+        JSON.stringify(updated),
+      )
+      // Nama akun berubah → sesuaikan cache transaksi lokal supaya label ikut.
+      if (patch.name && patch.name !== before.name) {
+        try {
+          const txKey = getUserStorageKey(BASE_STORAGE_KEYS.TRANSACTIONS)
+          const txs = (JSON.parse(localStorage.getItem(txKey) || "[]") as TransactionRecord[]).map(
+            (t) => (t.account === before.name ? { ...t, account: patch.name as string } : t),
+          )
+          localStorage.setItem(txKey, JSON.stringify(txs))
+        } catch {
+          // ignore
+        }
+      }
+    }
+  },
+
+  /**
+   * Hapus satu sumber dana. Transaksi yang terkait tetap ada — kolom `account_id`
+   * di-set NULL otomatis oleh FK (label sumbernya jadi "—").
+   */
+  async remove(id: string): Promise<void> {
+    const list = await this.getAll()
+    const target = list.find((a) => a.id === id)
+    if (!target) return
+
+    if (isSupabaseConfigured && supabase && id.includes("-")) {
+      try {
+        await supabase.from("accounts").delete().eq("id", id)
+      } catch (err) {
+        console.warn("account remove exception:", err)
+      }
+    }
+
+    const updated = list.filter((a) => a.id !== id)
+    if (typeof window !== "undefined") {
+      localStorage.setItem(
+        getUserStorageKey(BASE_STORAGE_KEYS.ACCOUNTS),
+        JSON.stringify(updated),
+      )
+      try {
+        const meta = readCardMeta()
+        delete meta[id]
+        localStorage.setItem(BASE_STORAGE_KEYS.CARD_META, JSON.stringify(meta))
+      } catch {
+        // ignore
+      }
+    }
+  },
 }
 
 // ==========================================================
@@ -844,6 +951,161 @@ export const transactionService = {
       localStorage.removeItem(key)
     }
   },
+
+  /**
+   * Ubah satu transaksi manual. Menyeimbangkan saldo akun: efek lama dibatalkan,
+   * efek baru diterapkan (termasuk bila akun sumbernya diganti).
+   */
+  async update(
+    id: string,
+    patch: Partial<Pick<TransactionRecord, "title" | "category" | "type" | "amount" | "account" | "date" | "notes">>,
+  ): Promise<void> {
+    const list = await this.getAll()
+    const before = list.find((t) => t.id === id)
+    if (!before) return
+    const after = { ...before, ...patch }
+
+    if (isSupabaseConfigured && supabase && id.includes("-")) {
+      try {
+        const upd: Record<string, unknown> = {}
+        if (patch.title !== undefined) upd.title = patch.title
+        if (patch.category !== undefined) upd.category = patch.category
+        if (patch.type !== undefined) upd.type = patch.type
+        if (patch.amount !== undefined) upd.amount = patch.amount
+        if (patch.date !== undefined) upd.date = patch.date
+        if (patch.notes !== undefined) upd.notes = patch.notes
+        if (patch.account !== undefined && patch.account !== before.account) {
+          const accs = await accountService.getAll()
+          let accId = accs.find((a) => a.name === patch.account)?.id || null
+          if (accId && !accId.includes("-")) accId = null
+          upd.account_id = accId
+        }
+        if (Object.keys(upd).length) {
+          await supabase.from("transactions").update(upd).eq("id", id)
+        }
+      } catch (err) {
+        console.warn("transaction update exception:", err)
+      }
+    }
+
+    // Saldo: batalkan efek lama, terapkan efek baru.
+    const oldDelta = before.type === "in" ? before.amount : -before.amount
+    const newDelta = after.type === "in" ? after.amount : -after.amount
+    if (before.account === after.account) {
+      await accountService.adjustBalanceByName(after.account, newDelta - oldDelta)
+    } else {
+      await accountService.adjustBalanceByName(before.account, -oldDelta)
+      await accountService.adjustBalanceByName(after.account, newDelta)
+    }
+
+    const updated = list.map((t) =>
+      t.id === id ? { ...after, formattedDate: formatIdDate(after.date) } : t,
+    )
+    if (typeof window !== "undefined") {
+      localStorage.setItem(
+        getUserStorageKey(BASE_STORAGE_KEYS.TRANSACTIONS),
+        JSON.stringify(updated),
+      )
+    }
+  },
+
+  /** Hapus satu transaksi & kembalikan efeknya ke saldo akun. */
+  async remove(id: string): Promise<void> {
+    const list = await this.getAll()
+    const target = list.find((t) => t.id === id)
+    if (!target) return
+
+    if (isSupabaseConfigured && supabase && id.includes("-")) {
+      try {
+        await supabase.from("transactions").delete().eq("id", id)
+      } catch (err) {
+        console.warn("transaction remove exception:", err)
+      }
+    }
+
+    const delta = target.type === "out" ? target.amount : -target.amount
+    await accountService.adjustBalanceByName(target.account, delta)
+
+    const updated = list.filter((t) => t.id !== id)
+    if (typeof window !== "undefined") {
+      localStorage.setItem(
+        getUserStorageKey(BASE_STORAGE_KEYS.TRANSACTIONS),
+        JSON.stringify(updated),
+      )
+    }
+  },
+
+  /**
+   * Hapus transaksi pribadi ber-penanda `[#sbS:*]` yang kuncinya TIDAK ada di
+   * `validKeys` — artinya split bill sumbernya sudah dihapus atau diedit (sehingga
+   * id split-nya berganti). Efek ke saldo dikembalikan. Dipakai reconcileRoomLedger.
+   */
+  async _purgeSbOrphans(validKeys: Set<string>): Promise<void> {
+    const currentUser = authService.getCurrentUser()
+    type Row = { id: string; notes: string; type: "in" | "out"; amount: number; account: string }
+    let rows: Row[] = []
+
+    if (isSupabaseConfigured && supabase && currentUser?.id && currentUser.id.includes("-")) {
+      try {
+        const { data } = await supabase
+          .from("transactions")
+          .select("id, notes, type, amount, accounts(name)")
+          .eq("user_id", currentUser.id)
+          .ilike("notes", "%[#sbS:%")
+        rows = (data || []).map((t: Record<string, unknown>) => ({
+          id: t.id as string,
+          notes: (t.notes as string) || "",
+          type: t.type as "in" | "out",
+          amount: Number(t.amount),
+          account: (t.accounts as { name?: string } | null)?.name || "",
+        }))
+      } catch (err) {
+        console.warn("_purgeSbOrphans exception:", err)
+        return
+      }
+    } else if (typeof window !== "undefined") {
+      try {
+        rows = (JSON.parse(
+          localStorage.getItem(getUserStorageKey(BASE_STORAGE_KEYS.TRANSACTIONS)) || "[]",
+        ) as TransactionRecord[])
+          .filter((t) => /\[#sbS:/i.test(t.notes || ""))
+          .map((t) => ({ id: t.id, notes: t.notes || "", type: t.type, amount: t.amount, account: t.account }))
+      } catch {
+        rows = []
+      }
+    }
+
+    const orphans = rows.filter((r) => {
+      const m = r.notes.match(/\[#sbS:([a-z0-9]{3,16})\]/i)
+      return m ? !validKeys.has(`sbs:${m[1].toLowerCase()}`) : false
+    })
+    if (orphans.length === 0) return
+
+    for (const r of orphans) {
+      if (isSupabaseConfigured && supabase && r.id.includes("-")) {
+        try {
+          await supabase.from("transactions").delete().eq("id", r.id)
+        } catch {
+          // ignore
+        }
+      }
+      const delta = r.type === "out" ? r.amount : -r.amount
+      await accountService.adjustBalanceByName(r.account, delta)
+    }
+
+    if (typeof window !== "undefined") {
+      try {
+        const key = getUserStorageKey(BASE_STORAGE_KEYS.TRANSACTIONS)
+        const ids = new Set(orphans.map((o) => o.id))
+        const kept = (JSON.parse(localStorage.getItem(key) || "[]") as TransactionRecord[]).filter(
+          (t) => !ids.has(t.id),
+        )
+        localStorage.setItem(key, JSON.stringify(kept))
+      } catch {
+        // ignore
+      }
+    }
+  },
 }
 
 // ==========================================================
@@ -993,8 +1255,71 @@ export const goalService = {
       account: resolvePersonalAccount(accts, accountName),
       date: todayLocalISO(),
       formattedDate: formatIdDate(new Date()),
-      notes: `Setoran otomatis ke target ${targetGoal.title}`,
+      notes: `Setoran otomatis ke target ${targetGoal.title} [#auto]`,
     })
+  },
+
+  /** Ubah detail target (judul, kategori, nominal target, tenggat). Status
+   *  dihitung ulang terhadap `currentAmount` yang sudah terkumpul. */
+  async update(
+    id: string,
+    patch: Partial<Pick<GoalRecord, "title" | "category" | "targetAmount" | "deadline">>,
+  ): Promise<void> {
+    const list = await this.getAll()
+    const before = list.find((g) => g.id === id)
+    if (!before) return
+    const targetAmount = patch.targetAmount ?? before.targetAmount
+    const status: GoalRecord["status"] =
+      before.currentAmount >= targetAmount
+        ? "completed"
+        : targetAmount > 0 && before.currentAmount / targetAmount >= 0.75
+          ? "almost"
+          : "active"
+
+    if (isSupabaseConfigured && supabase && id.includes("-")) {
+      try {
+        const upd: Record<string, unknown> = {}
+        if (patch.title !== undefined) upd.title = patch.title
+        if (patch.category !== undefined) upd.category = patch.category
+        if (patch.deadline !== undefined) upd.deadline = patch.deadline
+        if (patch.targetAmount !== undefined) {
+          upd.target_amount = patch.targetAmount
+          upd.status = status
+        }
+        if (Object.keys(upd).length) {
+          await supabase.from("goals").update(upd).eq("id", id)
+        }
+      } catch (err) {
+        console.warn("goal update exception:", err)
+      }
+    }
+
+    const updated = list.map((g) =>
+      g.id === id ? { ...g, ...patch, targetAmount, status } : g,
+    )
+    if (typeof window !== "undefined") {
+      localStorage.setItem(getUserStorageKey(BASE_STORAGE_KEYS.GOALS), JSON.stringify(updated))
+    }
+  },
+
+  /**
+   * Hapus satu target (beserta riwayat setoran `saving_logs` — cascade). Transaksi
+   * "Setoran Tabungan" yang sudah tercatat di log pribadi TIDAK ikut terhapus
+   * (uang memang sudah berpindah).
+   */
+  async remove(id: string): Promise<void> {
+    if (isSupabaseConfigured && supabase && id.includes("-")) {
+      try {
+        await supabase.from("goals").delete().eq("id", id)
+      } catch (err) {
+        console.warn("goal remove exception:", err)
+      }
+    }
+    const list = await this.getAll()
+    const updated = list.filter((g) => g.id !== id)
+    if (typeof window !== "undefined") {
+      localStorage.setItem(getUserStorageKey(BASE_STORAGE_KEYS.GOALS), JSON.stringify(updated))
+    }
   },
 }
 
@@ -1126,8 +1451,74 @@ export const scheduledService = {
       account: resolvePersonalAccount(accts, target.account),
       date: todayLocalISO(),
       formattedDate: formatIdDate(new Date()),
-      notes: target.notes || `Pelunasan jadwal tagihan ${target.title}`,
+      notes: `${target.notes || `Pelunasan jadwal tagihan ${target.title}`} [#auto]`,
     })
+  },
+
+  /** Ubah detail jadwal tagihan (judul, kategori, nominal, tempo, akun, catatan). */
+  async update(
+    id: string,
+    patch: Partial<Pick<ScheduledBillRecord, "title" | "category" | "amount" | "date" | "account" | "notes">>,
+  ): Promise<void> {
+    const list = await this.getAll()
+    const before = list.find((b) => b.id === id)
+    if (!before) return
+
+    if (isSupabaseConfigured && supabase && id.includes("-")) {
+      try {
+        const upd: Record<string, unknown> = {}
+        if (patch.title !== undefined) upd.title = patch.title
+        if (patch.category !== undefined) upd.category = patch.category
+        if (patch.amount !== undefined) upd.amount = patch.amount
+        if (patch.date !== undefined) upd.due_date = toISODate(patch.date)
+        if (Object.keys(upd).length) {
+          await supabase.from("scheduled_payments").update(upd).eq("id", id)
+        }
+      } catch (err) {
+        console.warn("scheduled update exception:", err)
+      }
+    }
+
+    if (patch.account !== undefined || patch.notes !== undefined) {
+      writeScheduledMeta(id, { account: patch.account, notes: patch.notes })
+    }
+
+    const updated = list.map((b) =>
+      b.id === id
+        ? {
+            ...b,
+            ...patch,
+            formattedDate: patch.date ? formatIdDate(toISODate(patch.date)) : b.formattedDate,
+          }
+        : b,
+    )
+    if (typeof window !== "undefined") {
+      localStorage.setItem(getUserStorageKey(BASE_STORAGE_KEYS.SCHEDULED), JSON.stringify(updated))
+    }
+  },
+
+  /** Hapus satu jadwal tagihan. Kalau sudah "paid", transaksi pembayarannya di
+   *  log pribadi tetap ada. */
+  async remove(id: string): Promise<void> {
+    if (isSupabaseConfigured && supabase && id.includes("-")) {
+      try {
+        await supabase.from("scheduled_payments").delete().eq("id", id)
+      } catch (err) {
+        console.warn("scheduled remove exception:", err)
+      }
+    }
+    const list = await this.getAll()
+    const updated = list.filter((b) => b.id !== id)
+    if (typeof window !== "undefined") {
+      localStorage.setItem(getUserStorageKey(BASE_STORAGE_KEYS.SCHEDULED), JSON.stringify(updated))
+      try {
+        const meta = readScheduledMeta()
+        delete meta[id]
+        localStorage.setItem(BASE_STORAGE_KEYS.SCHEDULED_META, JSON.stringify(meta))
+      } catch {
+        // ignore
+      }
+    }
   },
 }
 
@@ -1379,11 +1770,51 @@ export const kamarService = {
   },
 
   async leaveRoom(): Promise<void> {
+    const currentUser = authService.getCurrentUser()
+    const room = this.getUserRoom()
+    if (
+      isSupabaseConfigured &&
+      supabase &&
+      currentUser?.id &&
+      currentUser.id.includes("-") &&
+      room?.id &&
+      room.id.includes("-")
+    ) {
+      try {
+        await supabase
+          .from("room_members")
+          .delete()
+          .eq("room_id", room.id)
+          .eq("user_id", currentUser.id)
+      } catch (err) {
+        console.warn("leaveRoom exception:", err)
+      }
+    }
     if (typeof window !== "undefined") {
-      const key = getUserStorageKey(BASE_STORAGE_KEYS.ROOM)
-      localStorage.removeItem(key)
+      localStorage.removeItem(getUserStorageKey(BASE_STORAGE_KEYS.ROOM))
+      localStorage.removeItem(getUserStorageKey(BASE_STORAGE_KEYS.SHARED_TX))
+      localStorage.removeItem(getUserStorageKey(BASE_STORAGE_KEYS.REQUIREMENTS))
       window.dispatchEvent(new Event("room-updated"))
     }
+  },
+
+  /**
+   * Keluarkan anggota lain dari kamar (hanya Ketua Kos — dijaga RLS policy
+   * "Ketua Kos can remove members"). `memberRowId` = kolom `id` baris room_members.
+   */
+  async removeMember(memberRowId: string): Promise<{ error: string | null }> {
+    if (isSupabaseConfigured && supabase && memberRowId.includes("-")) {
+      try {
+        const { error } = await supabase.from("room_members").delete().eq("id", memberRowId)
+        if (error) {
+          return { error: "Hanya Ketua Kos yang bisa mengeluarkan anggota." }
+        }
+      } catch {
+        return { error: "Tidak bisa terhubung ke server." }
+      }
+    }
+    if (typeof window !== "undefined") window.dispatchEvent(new Event("room-updated"))
+    return { error: null }
   },
 
   async deleteRoom(roomId?: string): Promise<void> {
@@ -1517,7 +1948,9 @@ export const kamarService = {
               totalAmount: Number(t.total_amount),
               paidBy: payerName,
               paidByUserId: paidById,
+              createdByUserId: (t.created_by as string) || undefined,
               splitBetween,
+              splitUserIds: splits.map((s) => s.user_id),
               perPersonAmount: perPerson,
               myShare,
               status,
@@ -1718,6 +2151,147 @@ export const kamarService = {
   },
 
   /**
+   * Ubah satu split bill kos. Hanya pembuat/penalang (dijaga RLS). Bila belum ada
+   * anggota lain yang melunasi, total & daftar peserta boleh diubah — baris split
+   * dibuat ulang. Bila sudah ada yang melunasi, hanya `title`/`category`.
+   * Rekonsiliasi membereskan pengeluaran pribadi tiap anggota.
+   */
+  async updateSharedTransaction(
+    txId: string,
+    patch: {
+      title?: string
+      category?: string
+      totalAmount?: number
+      splitUserIds?: string[]
+      payerAccount?: string
+    },
+  ): Promise<{ error: string | null }> {
+    const currentUser = authService.getCurrentUser()
+    const room = this.getUserRoom()
+    const myId = currentUser?.id
+
+    const structural = patch.totalAmount !== undefined || patch.splitUserIds !== undefined
+
+    if (
+      isSupabaseConfigured &&
+      supabase &&
+      txId.includes("-") &&
+      currentUser?.id &&
+      currentUser.id.includes("-")
+    ) {
+      try {
+        const { data, error: getErr } = await supabase
+          .from("room_transactions")
+          .select("paid_by_user_id, total_amount, room_transaction_splits(id, user_id, is_settled)")
+          .eq("id", txId)
+          .single()
+        if (getErr || !data) return { error: "Transaksi tidak ditemukan." }
+
+        const payerId = data.paid_by_user_id as string
+        const splits =
+          (data.room_transaction_splits as Array<{ id: string; user_id: string; is_settled: boolean }>) || []
+        const someoneElseSettled = splits.some((s) => s.user_id !== payerId && s.is_settled)
+        if (structural && someoneElseSettled) {
+          return {
+            error: "Sudah ada anggota yang melunasi — hanya judul & kategori yang bisa diubah.",
+          }
+        }
+
+        const newSharerIds = patch.splitUserIds ?? splits.map((s) => s.user_id)
+        const sharerCount = Math.max(1, newSharerIds.length)
+        const newTotal = patch.totalAmount ?? Number(data.total_amount)
+        const perPerson = Math.ceil(newTotal / sharerCount)
+
+        const upd: Record<string, unknown> = {}
+        if (patch.title !== undefined) upd.title = patch.title
+        if (patch.category !== undefined) upd.category = patch.category
+        if (structural) {
+          upd.total_amount = newTotal
+          upd.per_person_amount = perPerson
+        }
+        if (Object.keys(upd).length) {
+          const { error: updErr } = await supabase
+            .from("room_transactions")
+            .update(upd)
+            .eq("id", txId)
+          if (updErr) return { error: "Hanya pembuat / penalang yang bisa mengubah." }
+        }
+
+        if (structural) {
+          await supabase.from("room_transaction_splits").delete().eq("transaction_id", txId)
+          const rows = newSharerIds
+            .filter((id) => id.includes("-"))
+            .map((userId) => ({
+              transaction_id: txId,
+              user_id: userId,
+              amount_owed: perPerson,
+              is_settled: userId === payerId,
+              settled_at: userId === payerId ? new Date().toISOString() : null,
+            }))
+          if (rows.length > 0) {
+            const { error: splitErr } = await supabase
+              .from("room_transaction_splits")
+              .insert(rows)
+            if (splitErr) console.error("updateSharedTransaction splits insert error:", splitErr)
+          }
+        }
+
+        if (payerId === myId && patch.payerAccount) writeSplitMeta(txId, patch.payerAccount)
+      } catch (err) {
+        console.warn("updateSharedTransaction exception:", err)
+        return { error: "Tidak bisa terhubung ke server." }
+      }
+    }
+
+    await this.reconcileRoomLedger(room?.id)
+    return { error: null }
+  },
+
+  /**
+   * Hapus satu split bill kos (baris `room_transaction_splits` ikut lewat cascade).
+   * Hanya pembuat (dijaga RLS policy "Creator can delete room transactions").
+   * Rekonsiliasi tiap anggota membuang pengeluaran pribadi yang jadi yatim &
+   * mengembalikan saldo.
+   */
+  async deleteSharedTransaction(txId: string): Promise<{ error: string | null }> {
+    const currentUser = authService.getCurrentUser()
+    const room = this.getUserRoom()
+
+    if (
+      isSupabaseConfigured &&
+      supabase &&
+      txId.includes("-") &&
+      currentUser?.id &&
+      currentUser.id.includes("-")
+    ) {
+      try {
+        const { error } = await supabase.from("room_transactions").delete().eq("id", txId)
+        if (error) return { error: "Hanya pembuat transaksi yang bisa menghapus." }
+      } catch {
+        return { error: "Tidak bisa terhubung ke server." }
+      }
+    }
+
+    if (typeof window !== "undefined") {
+      try {
+        const key = getUserStorageKey(BASE_STORAGE_KEYS.SHARED_TX)
+        const kept = (
+          JSON.parse(localStorage.getItem(key) || "[]") as SharedTransactionRecord[]
+        ).filter((t) => t.id !== txId)
+        localStorage.setItem(key, JSON.stringify(kept))
+        const sm = readSplitMeta()
+        delete sm[txId]
+        localStorage.setItem(BASE_STORAGE_KEYS.SPLIT_META, JSON.stringify(sm))
+      } catch {
+        // ignore
+      }
+    }
+
+    await this.reconcileRoomLedger(room?.id)
+    return { error: null }
+  },
+
+  /**
    * Selaraskan transaksi pribadi user dengan split bill kamar.
    * IDEMPOTEN (penanda `[#sbS:id]` di notes) — aman dipanggil berkali-kali / di
    * banyak device. Guard "in-flight" mencegah panggilan paralel bikin dobel.
@@ -1798,6 +2372,19 @@ export const kamarService = {
         return
       }
     }
+
+    // Kunci [#sbS:*] yang MASIH valid (split bill-nya masih ada). Entri pengeluaran
+    // pribadi dengan kunci di luar ini = yatim (split bill dihapus / diedit sehingga
+    // id split-nya berganti) → dibuang + saldo dikembalikan.
+    const validSbKeys = new Set<string>()
+    for (const t of rows) {
+      const splits = t.room_transaction_splits || []
+      const iAmPayer = t.paid_by_user_id === myId
+      const mySettledSplit = splits.find((s) => s.user_id === myId && s.is_settled)
+      const key = mySettledSplit ? mySettledSplit.id : iAmPayer ? t.id : null
+      if (key) validSbKeys.add(refKey("sbS", key))
+    }
+    await transactionService._purgeSbOrphans(validSbKeys)
 
     for (const t of rows) {
       const splits = t.room_transaction_splits || []
@@ -2061,7 +2648,7 @@ export const kamarService = {
       account: resolvePersonalAccount(accts),
       date: todayLocalISO(),
       formattedDate: formatIdDate(new Date()),
-      notes: `Potongan otomatis setoran kebutuhan kos`,
+      notes: `Potongan otomatis setoran kebutuhan kos [#auto]`,
     })
 
     // 2. Catat pembayaran di tabel room_requirement_payments.
@@ -2091,6 +2678,90 @@ export const kamarService = {
     const updated = list.map((r) =>
       r.id === reqId ? { ...r, isPaidByMe: true } : r,
     )
+    if (typeof window !== "undefined") {
+      localStorage.setItem(
+        getUserStorageKey(BASE_STORAGE_KEYS.REQUIREMENTS),
+        JSON.stringify(updated),
+      )
+    }
+  },
+
+  /** Ubah detail kebutuhan bulanan kos (semua anggota kamar boleh — RLS
+   *  "Room members can update requirements"). Per-orang dihitung ulang. */
+  async updateRequirement(
+    reqId: string,
+    patch: {
+      title?: string
+      category?: string
+      totalPrice?: number
+      splitPeopleCount?: number
+      dueDate?: string
+      responsiblePerson?: string
+    },
+  ): Promise<void> {
+    const room = this.getUserRoom()
+    const list = await this.getRequirements()
+    const before = list.find((r) => r.id === reqId)
+    if (!before) return
+    const total = patch.totalPrice ?? before.totalPrice
+    const count = patch.splitPeopleCount ?? before.splitPeopleCount
+    const perPerson = Math.ceil(total / Math.max(1, count))
+
+    if (isSupabaseConfigured && supabase && reqId.includes("-")) {
+      try {
+        const upd: Record<string, unknown> = {}
+        if (patch.title !== undefined) upd.title = patch.title
+        if (patch.category !== undefined) upd.category = patch.category
+        if (patch.totalPrice !== undefined || patch.splitPeopleCount !== undefined) {
+          upd.total_price = total
+          upd.split_people_count = count
+          upd.per_person_price = perPerson
+        }
+        if (patch.dueDate !== undefined) upd.due_date = toISODate(patch.dueDate)
+        if (patch.responsiblePerson !== undefined) {
+          const members = await this.getRoomMembers(room?.id)
+          const rid = members.find((m) => m.name === patch.responsiblePerson)?.userId || null
+          upd.responsible_user_id = rid && rid.includes("-") ? rid : null
+        }
+        if (Object.keys(upd).length) {
+          await supabase.from("room_requirements").update(upd).eq("id", reqId)
+        }
+      } catch (err) {
+        console.warn("updateRequirement exception:", err)
+      }
+    }
+
+    const updated = list.map((r) =>
+      r.id === reqId
+        ? {
+            ...r,
+            ...patch,
+            totalPrice: total,
+            splitPeopleCount: count,
+            perPersonPrice: perPerson,
+          }
+        : r,
+    )
+    if (typeof window !== "undefined") {
+      localStorage.setItem(
+        getUserStorageKey(BASE_STORAGE_KEYS.REQUIREMENTS),
+        JSON.stringify(updated),
+      )
+    }
+  },
+
+  /** Hapus satu kebutuhan bulanan kos (riwayat pembayaran anggota ikut lewat
+   *  cascade; transaksi "Iuran Bulanan Kos" di log pribadi tetap ada). */
+  async deleteRequirement(reqId: string): Promise<void> {
+    if (isSupabaseConfigured && supabase && reqId.includes("-")) {
+      try {
+        await supabase.from("room_requirements").delete().eq("id", reqId)
+      } catch (err) {
+        console.warn("deleteRequirement exception:", err)
+      }
+    }
+    const list = await this.getRequirements()
+    const updated = list.filter((r) => r.id !== reqId)
     if (typeof window !== "undefined") {
       localStorage.setItem(
         getUserStorageKey(BASE_STORAGE_KEYS.REQUIREMENTS),

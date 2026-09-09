@@ -1,7 +1,14 @@
 "use client"
 
 import React, { useState, useEffect } from "react"
-import { transactionService, kamarService, stripLedgerRef } from "@/lib/db"
+import {
+  transactionService,
+  kamarService,
+  accountService,
+  stripLedgerRef,
+  isSystemTransaction,
+  FinancialAccountRecord,
+} from "@/lib/db"
 import { useMoney } from "@/lib/currency"
 import { format } from "date-fns"
 import { cn } from "@/lib/utils"
@@ -60,6 +67,17 @@ import {
   PaginationContent,
   PaginationItem,
 } from "@/components/ui/pagination"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 import { Spinner } from "@/components/ui/spinner"
 import {
   Plus,
@@ -69,6 +87,9 @@ import {
   Wallet,
   ArrowUpRight,
   ArrowDownLeft,
+  Pencil,
+  Trash2,
+  Lock,
 } from "lucide-react"
 
 export interface TransactionItem {
@@ -87,13 +108,23 @@ export default function TransaksiPage() {
   const { fmt, formatInput, parseInput, symbol } = useMoney()
   // Mock Initial Transactions State
   const [transactions, setTransactions] = useState<TransactionItem[]>([])
+  const [accounts, setAccounts] = useState<FinancialAccountRecord[]>([])
+
+  const refreshTransactions = React.useCallback(async () => {
+    const data = await transactionService.getAll()
+    setTransactions(data)
+  }, [])
 
   useEffect(() => {
     async function loadTransactions() {
       // Selaraskan dampak split bill kos (talangan / pengembalian) lebih dulu.
       await kamarService.reconcileRoomLedger()
-      const data = await transactionService.getAll()
+      const [data, accs] = await Promise.all([
+        transactionService.getAll(),
+        accountService.getAll(),
+      ])
       setTransactions(data)
+      setAccounts(accs)
     }
     loadTransactions()
   }, [])
@@ -192,6 +223,56 @@ export default function TransaksiPage() {
     setNewNotes("")
     setIsSubmitting(false)
     setIsAddDialogOpen(false)
+  }
+
+  // ---- Edit / Delete state ----
+  const [editTx, setEditTx] = useState<TransactionItem | null>(null)
+  const [editTitle, setEditTitle] = useState("")
+  const [editAmount, setEditAmount] = useState("")
+  const [editType, setEditType] = useState<"in" | "out">("out")
+  const [editCategory, setEditCategory] = useState("Konsumsi")
+  const [editAccount, setEditAccount] = useState("")
+  const [editNotes, setEditNotes] = useState("")
+  const [isEditing, setIsEditing] = useState(false)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  const openEdit = (tx: TransactionItem) => {
+    setEditTx(tx)
+    setEditTitle(tx.title)
+    setEditAmount(formatInput(String(tx.amount)))
+    setEditType(tx.type)
+    setEditCategory(tx.category)
+    setEditAccount(tx.account)
+    setEditNotes(stripLedgerRef(tx.notes))
+  }
+
+  const handleEditTransaction = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editTx || !editTitle) return
+    const amt = parseInput(editAmount)
+    if (isNaN(amt) || amt <= 0) return
+
+    setIsEditing(true)
+    await transactionService.update(editTx.id, {
+      title: editTitle,
+      category: editCategory,
+      type: editType,
+      amount: amt,
+      account: editAccount,
+      notes: editNotes,
+    })
+    await refreshTransactions()
+    setIsEditing(false)
+    setEditTx(null)
+    showNotification(`Transaksi "${editTitle}" berhasil diperbarui.`)
+  }
+
+  const handleDeleteTransaction = async (tx: TransactionItem) => {
+    setDeletingId(tx.id)
+    await transactionService.remove(tx.id)
+    await refreshTransactions()
+    setDeletingId(null)
+    showNotification(`Transaksi "${tx.title}" dihapus & saldo dikembalikan.`)
   }
 
   return (
@@ -517,12 +598,13 @@ export default function TransaksiPage() {
                   <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Kategori</TableHead>
                   <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Sumber Dana</TableHead>
                   <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground text-right">Nominal</TableHead>
+                  <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground text-right">Aksi</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {paginatedTransactions.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8 text-xs text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center py-8 text-xs text-muted-foreground">
                       Tidak ada transaksi yang ditemukan.
                     </TableCell>
                   </TableRow>
@@ -561,6 +643,60 @@ export default function TransaksiPage() {
                         tx.type === 'in' ? 'text-emerald-600 dark:text-emerald-400' : 'text-foreground'
                       }`}>
                         {tx.type === "in" ? "+" : "-"}{fmt(tx.amount)}
+                      </TableCell>
+                      <TableCell className="px-5 py-3.5 text-right whitespace-nowrap">
+                        {isSystemTransaction(tx.notes) ? (
+                          <span
+                            className="inline-flex items-center gap-1 text-[11px] text-muted-foreground"
+                            title="Transaksi otomatis — ubah dari fitur sumbernya (split bill kos / target tabungan / iuran)"
+                          >
+                            <Lock className="size-3" /> Terkunci
+                          </span>
+                        ) : (
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="size-7 text-muted-foreground hover:text-foreground"
+                              onClick={() => openEdit(tx)}
+                            >
+                              <Pencil className="size-3.5" />
+                            </Button>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="size-7 text-muted-foreground hover:text-rose-600"
+                                  disabled={deletingId === tx.id}
+                                >
+                                  <Trash2 className="size-3.5" />
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle className="text-rose-600 dark:text-rose-400">
+                                    Hapus transaksi ini?
+                                  </AlertDialogTitle>
+                                  <AlertDialogDescription className="text-xs leading-relaxed">
+                                    &quot;{tx.title}&quot; ({tx.type === "in" ? "+" : "-"}{fmt(tx.amount)}) akan
+                                    dihapus permanen. Saldo akun <strong>{tx.account}</strong> akan
+                                    dikembalikan seperti sebelum transaksi ini.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel className="text-xs">Batal</AlertDialogCancel>
+                                  <AlertDialogAction
+                                    className="text-xs bg-rose-600 hover:bg-rose-700 text-white"
+                                    onClick={() => handleDeleteTransaction(tx)}
+                                  >
+                                    Ya, Hapus
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </div>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))
@@ -630,6 +766,126 @@ export default function TransaksiPage() {
           </div>
         </Card>
       </div>
+
+      {/* Edit Transaction Dialog */}
+      <Dialog open={!!editTx} onOpenChange={(open) => !open && setEditTx(null)}>
+        <DialogContent className="sm:max-w-md shadow-none border">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base font-bold">
+              <Pencil className="size-5 text-primary" />
+              Ubah Transaksi
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Perubahan nominal / tipe otomatis menyesuaikan saldo sumber dana.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleEditTransaction} className="space-y-4 pt-2">
+            <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-muted/60 text-xs">
+              <button
+                type="button"
+                onClick={() => setEditType("out")}
+                className={`py-1.5 px-3 rounded-lg font-semibold transition-all ${
+                  editType === "out" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground"
+                }`}
+              >
+                🔴 Pengeluaran
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditType("in")}
+                className={`py-1.5 px-3 rounded-lg font-semibold transition-all ${
+                  editType === "in" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground"
+                }`}
+              >
+                🟢 Pemasukan
+              </button>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-muted-foreground">Keterangan Transaksi</label>
+              <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} required />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-muted-foreground">Nominal ({symbol})</label>
+                <Input
+                  type="text"
+                  value={editAmount}
+                  onChange={(e) => setEditAmount(formatInput(e.target.value))}
+                  required
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-muted-foreground">Kategori</label>
+                <Select value={editCategory} onValueChange={setEditCategory}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Kategori" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Konsumsi">Konsumsi</SelectItem>
+                    <SelectItem value="Kamar Kos">Kamar Kos</SelectItem>
+                    <SelectItem value="Tabungan & Target">Tabungan & Target</SelectItem>
+                    <SelectItem value="Pemasukan">Pemasukan Gaji/Bonus</SelectItem>
+                    <SelectItem value="Transportasi">Transportasi</SelectItem>
+                    <SelectItem value="Transfer">Transfer</SelectItem>
+                    {editCategory &&
+                      !["Konsumsi", "Kamar Kos", "Tabungan & Target", "Pemasukan", "Transportasi", "Transfer"].includes(
+                        editCategory,
+                      ) && <SelectItem value={editCategory}>{editCategory}</SelectItem>}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-muted-foreground">Sumber Dana</label>
+              <Select value={editAccount} onValueChange={setEditAccount}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Sumber Dana" />
+                </SelectTrigger>
+                <SelectContent>
+                  {accounts.map((a) => (
+                    <SelectItem key={a.id} value={a.name}>
+                      {a.name}
+                    </SelectItem>
+                  ))}
+                  {editAccount && !accounts.some((a) => a.name === editAccount) && (
+                    <SelectItem value={editAccount}>{editAccount}</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-muted-foreground">Catatan Tambahan (Opsional)</label>
+              <Textarea value={editNotes} onChange={(e) => setEditNotes(e.target.value)} />
+            </div>
+
+            <DialogFooter className="pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="shadow-none text-xs"
+                onClick={() => setEditTx(null)}
+              >
+                Batal
+              </Button>
+              <Button type="submit" disabled={isEditing} className="shadow-none text-xs">
+                {isEditing ? (
+                  <div className="flex items-center gap-1.5">
+                    <Spinner className="size-3.5" />
+                    <span>Menyimpan...</span>
+                  </div>
+                ) : (
+                  "Simpan Perubahan"
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

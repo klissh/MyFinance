@@ -54,6 +54,17 @@ import {
   PaginationContent,
   PaginationItem,
 } from "@/components/ui/pagination"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 import { Spinner } from "@/components/ui/spinner"
 import {
   Receipt,
@@ -66,6 +77,8 @@ import {
   Search,
   LayoutGrid,
   List,
+  Pencil,
+  Trash2,
 } from "lucide-react"
 
 interface KosRoutineRequirement {
@@ -145,6 +158,57 @@ export default function KebutuhanBulananKosPage() {
 
   const formatNumberWithDots = formatInput
   const parseFormattedNumber = parseInput
+
+  // ---- Edit / Delete Kebutuhan ----
+  const [editReq, setEditReq] = useState<KosRoutineRequirement | null>(null)
+  const [editTitle, setEditTitle] = useState("")
+  const [editCategory, setEditCategory] = useState("Listrik & Utilitas")
+  const [editTotal, setEditTotal] = useState("")
+  const [editSplitCount, setEditSplitCount] = useState("4")
+  const [editDueDate, setEditDueDate] = useState("")
+  const [editResponsible, setEditResponsible] = useState("")
+  const [isEditing, setIsEditing] = useState(false)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  const openEdit = (r: KosRoutineRequirement) => {
+    setEditReq(r)
+    setEditTitle(r.title)
+    setEditCategory(r.category)
+    setEditTotal(formatInput(String(r.totalPrice)))
+    setEditSplitCount(String(r.splitPeopleCount))
+    setEditDueDate(r.dueDate)
+    setEditResponsible(r.responsiblePerson)
+  }
+
+  const handleEditRequirement = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editReq || !editTitle) return
+    const total = parseInput(editTotal)
+    const count = parseInt(editSplitCount) || 1
+    if (isNaN(total) || total <= 0) return
+
+    setIsEditing(true)
+    await kamarService.updateRequirement(editReq.id, {
+      title: editTitle,
+      category: editCategory,
+      totalPrice: total,
+      splitPeopleCount: count,
+      dueDate: editDueDate,
+      responsiblePerson: editResponsible,
+    })
+    await reloadRequirements()
+    setIsEditing(false)
+    setEditReq(null)
+    showNotification(`Kebutuhan "${editTitle}" berhasil diperbarui.`)
+  }
+
+  const handleDeleteRequirement = async (r: KosRoutineRequirement) => {
+    setDeletingId(r.id)
+    await kamarService.deleteRequirement(r.id)
+    await reloadRequirements()
+    setDeletingId(null)
+    showNotification(`Kebutuhan "${r.title}" dihapus.`)
+  }
 
   const handleAddRequirement = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -543,12 +607,13 @@ export default function KebutuhanBulananKosPage() {
                       <TableHead className="px-3.5 py-3 text-xs font-semibold text-muted-foreground whitespace-nowrap">Beban Saya</TableHead>
                       <TableHead className="px-3.5 py-3 text-xs font-semibold text-muted-foreground whitespace-nowrap">Status Saya</TableHead>
                       <TableHead className="px-3.5 py-3 text-xs font-semibold text-muted-foreground text-right whitespace-nowrap">Aksi Pelunasan</TableHead>
+                      <TableHead className="px-3.5 py-3 text-xs font-semibold text-muted-foreground text-right whitespace-nowrap">Kelola</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {paginatedRequirements.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={7} className="text-center py-8 text-xs text-muted-foreground">
+                        <TableCell colSpan={8} className="text-center py-8 text-xs text-muted-foreground">
                           Tidak ada kebutuhan bulanan yang sesuai.
                         </TableCell>
                       </TableRow>
@@ -610,6 +675,53 @@ export default function KebutuhanBulananKosPage() {
                               </Button>
                             )}
                           </TableCell>
+                          <TableCell className="px-3.5 py-3 text-right whitespace-nowrap">
+                            <div className="flex items-center justify-end gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="size-7 text-muted-foreground hover:text-foreground"
+                                onClick={() => openEdit(r)}
+                                title="Ubah kebutuhan"
+                              >
+                                <Pencil className="size-3.5" />
+                              </Button>
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="size-7 text-muted-foreground hover:text-rose-600"
+                                    disabled={deletingId === r.id}
+                                    title="Hapus kebutuhan"
+                                  >
+                                    <Trash2 className="size-3.5" />
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle className="text-rose-600 dark:text-rose-400">
+                                      Hapus kebutuhan &quot;{r.title}&quot;?
+                                    </AlertDialogTitle>
+                                    <AlertDialogDescription className="text-xs leading-relaxed">
+                                      Kebutuhan ini & catatan pembayaran anggota untuknya dihapus
+                                      untuk semua penghuni. Transaksi &quot;Iuran Bulanan Kos&quot;
+                                      yang sudah tercatat di log pribadi tetap ada.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel className="text-xs">Batal</AlertDialogCancel>
+                                    <AlertDialogAction
+                                      className="text-xs bg-rose-600 hover:bg-rose-700 text-white"
+                                      onClick={() => handleDeleteRequirement(r)}
+                                    >
+                                      Ya, Hapus
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            </div>
+                          </TableCell>
                         </TableRow>
                       ))
                     )}
@@ -659,20 +771,63 @@ export default function KebutuhanBulananKosPage() {
                     </div>
                   </CardContent>
 
-                  <CardFooter className="p-0 pt-2 border-t border-border">
+                  <CardFooter className="p-0 pt-2 border-t border-border flex items-center gap-1.5">
                     {r.isPaidByMe ? (
-                      <Button variant="outline" size="sm" className="w-full text-xs shadow-none border-border h-7" disabled>
+                      <Button variant="outline" size="sm" className="flex-1 text-xs shadow-none border-border h-7" disabled>
                         <CheckCircle2 className="size-3 mr-1 text-emerald-600" /> Terpotong di Log
                       </Button>
                     ) : (
                       <Button
                         size="sm"
-                        className="w-full text-xs shadow-none h-7"
+                        className="flex-1 text-xs shadow-none h-7"
                         onClick={() => handlePayMyShare(r.id)}
                       >
                         Bayar Bagian Saya <ArrowRight className="size-3 ml-1" />
                       </Button>
                     )}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-7 shrink-0 text-muted-foreground hover:text-foreground border border-border"
+                      onClick={() => openEdit(r)}
+                      title="Ubah kebutuhan"
+                    >
+                      <Pencil className="size-3" />
+                    </Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-7 shrink-0 text-muted-foreground hover:text-rose-600 border border-border"
+                          disabled={deletingId === r.id}
+                          title="Hapus kebutuhan"
+                        >
+                          <Trash2 className="size-3" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle className="text-rose-600 dark:text-rose-400">
+                            Hapus kebutuhan &quot;{r.title}&quot;?
+                          </AlertDialogTitle>
+                          <AlertDialogDescription className="text-xs leading-relaxed">
+                            Kebutuhan ini & catatan pembayaran anggota untuknya dihapus untuk
+                            semua penghuni. Transaksi &quot;Iuran Bulanan Kos&quot; yang sudah
+                            tercatat di log pribadi tetap ada.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel className="text-xs">Batal</AlertDialogCancel>
+                          <AlertDialogAction
+                            className="text-xs bg-rose-600 hover:bg-rose-700 text-white"
+                            onClick={() => handleDeleteRequirement(r)}
+                          >
+                            Ya, Hapus
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </CardFooter>
                 </Card>
               ))}
@@ -740,6 +895,132 @@ export default function KebutuhanBulananKosPage() {
           </div>
         </Card>
       </div>
+
+      {/* Edit Kebutuhan Dialog */}
+      <Dialog open={!!editReq} onOpenChange={(open) => !open && setEditReq(null)}>
+        <DialogContent className="sm:max-w-md shadow-none border">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base font-bold">
+              <Pencil className="size-5 text-primary" />
+              Ubah Kebutuhan Bulanan Kos
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Nominal per orang dihitung ulang otomatis. Anggota yang sudah bayar tidak
+              ditarik ulang.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleEditRequirement} className="space-y-4 pt-2">
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-muted-foreground">Nama Kebutuhan / Tagihan</label>
+              <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} required />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-muted-foreground">Total Harga ({symbol})</label>
+                <Input
+                  type="text"
+                  value={editTotal}
+                  onChange={(e) => setEditTotal(formatNumberWithDots(e.target.value))}
+                  required
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-muted-foreground">Kategori</label>
+                <Select value={editCategory} onValueChange={setEditCategory}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Kategori" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Listrik & Utilitas">Listrik & Utilitas</SelectItem>
+                    <SelectItem value="Internet & Wifi">Internet & Wifi</SelectItem>
+                    <SelectItem value="Kebersihan & Air">Kebersihan & Air</SelectItem>
+                    <SelectItem value="Dapur & Konsumsi">Gas & Dapur</SelectItem>
+                    {editCategory &&
+                      !["Listrik & Utilitas", "Internet & Wifi", "Kebersihan & Air", "Dapur & Konsumsi"].includes(
+                        editCategory,
+                      ) && <SelectItem value={editCategory}>{editCategory}</SelectItem>}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-muted-foreground">Dibagi Berapa Orang?</label>
+                <Select value={editSplitCount} onValueChange={setEditSplitCount}>
+                  <SelectTrigger className="w-full font-semibold">
+                    <SelectValue placeholder="Jumlah Orang" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: Math.max(5, membersCount) }, (_, i) => i + 2).map((n) => (
+                      <SelectItem key={n} value={String(n)}>
+                        {n} Orang{n === membersCount ? " (Semua Penghuni)" : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-muted-foreground">Jatuh Tempo</label>
+                <Input
+                  placeholder="Contoh: 25 Aug 2026"
+                  value={editDueDate}
+                  onChange={(e) => setEditDueDate(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-muted-foreground">Penanggung Jawab Pembayaran</label>
+              <Select value={editResponsible} onValueChange={setEditResponsible}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Penanggung Jawab" />
+                </SelectTrigger>
+                <SelectContent>
+                  {members.length > 0 ? (
+                    members.map((m) => (
+                      <SelectItem key={m.id} value={m.name}>
+                        {m.name}
+                        {m.role === "Ketua Kos" ? " (Ketua Kos)" : ""}
+                        {m.isMe ? " — Saya" : ""}
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <SelectItem value="Ketua Kos">Ketua Kos</SelectItem>
+                  )}
+                  {editResponsible && !members.some((m) => m.name === editResponsible) && (
+                    <SelectItem value={editResponsible}>{editResponsible}</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <DialogFooter className="pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="shadow-none text-xs"
+                onClick={() => setEditReq(null)}
+              >
+                Batal
+              </Button>
+              <Button type="submit" disabled={isEditing} className="shadow-none text-xs">
+                {isEditing ? (
+                  <div className="flex items-center gap-1.5">
+                    <Spinner className="size-3.5" />
+                    <span>Menyimpan...</span>
+                  </div>
+                ) : (
+                  "Simpan Perubahan"
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
