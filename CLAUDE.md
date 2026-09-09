@@ -275,6 +275,21 @@ hardcoded `Bank BCA / Mandiri / Tunai / GoPay` — tidak nyambung ke akun asli, 
 - Daftar akun di-refresh tiap dialog dibuka (`useEffect` pada state open-dialog),
   jadi akun yang baru dibuat langsung muncul.
 
+## Ronde 10 (2026-09-10) — poles komponen `Select`
+
+`components/ui/select.tsx` dirapikan (semua ~48 dropdown ikut berubah):
+- **Panel dropdown**: dulu dipaksa `dark` + glass blur `bg-popover/70` → sekarang
+  **solid `bg-popover` & ikut tema** (fix: dulu putih-di-atas-gelap kalau HP light
+  mode), `rounded-2xl`, `border border-border`, `shadow-lg`.
+- **Posisi**: `position="popper"` (muncul di bawah field, lebar ≥ trigger) —
+  bukan lagi `item-aligned` yang menumpuki trigger.
+- **Trigger**: default `w-full` (dulu `w-fit`, tiap pemakaian override); `hover`
+  & `aria-expanded` beri feedback bg + border; chevron **berputar 180°** saat buka.
+  Radius/isi tetap sama dengan `<Input>` (`rounded-3xl` translucent).
+- **Item**: bobot normal, item terpilih `font-medium` + centang warna primary di
+  kanan; highlight `bg-accent`.
+- `max-h` panel dibatasi 20rem (dulu setinggi layar).
+
 ## Yang TIDAK perlu dikerjakan otomatis
 
 - Migrasi data dari Bizmo ke MSU — menunggu tindakan manusia (pemilik Bizmo invite member, atau ekspor file manual).
