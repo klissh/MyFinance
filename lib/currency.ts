@@ -141,6 +141,8 @@ export function useMoney() {
     /** Untuk mengisi kolom input dari nilai yang sudah ada (dialog "Ubah"). */
     formatValue: (n: number) => formatAmountValue(n, currency),
     parseInput: (formatted: string) => parseAmountInput(formatted, currency),
+    /** Placeholder kolom nominal: "0.00" untuk RM (gaya bank Malaysia), "0" untuk Rp. */
+    zero: formatAmountValue(0, currency),
     setCurrency,
   }
 }

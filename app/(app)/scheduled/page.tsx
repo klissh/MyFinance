@@ -84,7 +84,7 @@ import {
 } from "lucide-react"
 
 export default function ScheduledPage() {
-  const { fmt, formatInput, formatValue, parseInput, symbol } = useMoney()
+  const { fmt, formatInput, formatValue, parseInput, symbol, zero } = useMoney()
   const [calendarTransactions, setCalendarTransactions] = useState<CalendarTransaction[]>([])
   const [scheduledBills, setScheduledBills] = useState<ScheduledBillRecord[]>([])
   const [accounts, setAccounts] = useState<FinancialAccountRecord[]>([])
@@ -311,7 +311,8 @@ export default function ScheduledPage() {
                   <label className="text-xs font-semibold text-foreground">Jumlah Tagihan ({symbol})</label>
                   <Input
                     type="text"
-                    placeholder="1.500.000"
+                    inputMode="numeric"
+                    placeholder={zero}
                     className="text-xs shadow-none"
                     value={newAmount}
                     onChange={(e) => setNewAmount(formatNumberWithDots(e.target.value))}
@@ -690,6 +691,8 @@ export default function ScheduledPage() {
                 <label className="text-xs font-semibold text-foreground">Jumlah Tagihan ({symbol})</label>
                 <Input
                   type="text"
+                  inputMode="numeric"
+                  placeholder={zero}
                   className="text-xs shadow-none"
                   value={editAmount}
                   onChange={(e) => setEditAmount(formatNumberWithDots(e.target.value))}

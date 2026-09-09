@@ -85,7 +85,7 @@ interface AccountMutation {
 }
 
 export default function FinancePage() {
-  const { fmt, formatInput, formatValue, parseInput, symbol } = useMoney()
+  const { fmt, formatInput, formatValue, parseInput, symbol, zero } = useMoney()
   const [accounts, setAccounts] = useState<FinancialAccountRecord[]>([])
   const [mutations, setMutations] = useState<AccountMutation[]>([])
 
@@ -424,7 +424,8 @@ export default function FinancePage() {
                   <label className="text-xs font-semibold text-muted-foreground">Nominal Transfer ({symbol})</label>
                   <Input
                     type="text"
-                    placeholder="0"
+                    inputMode="numeric"
+                    placeholder={zero}
                     value={transferAmount}
                     onChange={(e) => setTransferAmount(formatNumberWithDots(e.target.value))}
                     required
@@ -518,7 +519,8 @@ export default function FinancePage() {
                     <label className="text-xs font-semibold text-muted-foreground">Saldo Awal ({symbol})</label>
                     <Input
                       type="text"
-                      placeholder="0"
+                      inputMode="numeric"
+                      placeholder={zero}
                       value={newAccBalance}
                       onChange={(e) => setNewAccBalance(formatNumberWithDots(e.target.value))}
                       required
@@ -905,6 +907,8 @@ export default function FinancePage() {
                 <label className="text-xs font-semibold text-muted-foreground">Saldo Saat Ini ({symbol})</label>
                 <Input
                   type="text"
+                  inputMode="numeric"
+                  placeholder={zero}
                   value={editBalance}
                   onChange={(e) => setEditBalance(formatNumberWithDots(e.target.value))}
                   required

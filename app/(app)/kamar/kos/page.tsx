@@ -95,7 +95,7 @@ export interface SharedTransaction {
 }
 
 export default function TransaksiKosPage() {
-  const { fmt, formatInput, formatValue, parseInput, symbol } = useMoney()
+  const { fmt, formatInput, formatValue, parseInput, symbol, zero } = useMoney()
   // Anggota kamar diambil dari data kamar yang sebenarnya (tabel room_members).
   const [members, setMembers] = useState<KamarMemberRecord[]>([])
   const [accounts, setAccounts] = useState<FinancialAccountRecord[]>([])
@@ -479,7 +479,8 @@ export default function TransaksiKosPage() {
                       <label className="text-xs font-semibold text-muted-foreground">Total Nominal Tagihan ({symbol})</label>
                       <Input
                         type="text"
-                        placeholder="0"
+                        inputMode="numeric"
+                        placeholder={zero}
                         value={newTotalAmount}
                         onChange={(e) => setNewTotalAmount(formatNumberWithDots(e.target.value))}
                         required
@@ -899,6 +900,8 @@ export default function TransaksiKosPage() {
                 <label className="text-xs font-semibold text-muted-foreground">Total Nominal ({symbol})</label>
                 <Input
                   type="text"
+                  inputMode="numeric"
+                  placeholder={zero}
                   value={editTotal}
                   onChange={(e) => setEditTotal(formatNumberWithDots(e.target.value))}
                   required

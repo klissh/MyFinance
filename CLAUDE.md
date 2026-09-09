@@ -204,6 +204,9 @@ UPDATE+DELETE (anggota kamar), `room_members` DELETE (Ketua Kos keluarkan anggot
   6 dialog Ubah (transaksi/finance/goals/scheduled/kebutuhan/kamar-kos) sudah pakai.
 - **`formatMoney` (MYR)** sekarang selalu 2 desimal (`minimumFractionDigits: 2`) —
   "RM 1,250.50", bukan "RM 1,250.5". IDR tetap 0 desimal.
+- `useMoney().zero` → `"0.00"` (RM) / `"0"` (Rp). Semua kolom nominal pakai
+  `placeholder={zero}` + `inputMode="numeric"` — jadi kolom kosong tampil "0.00"
+  bukan "0" (persis bank Malaysia).
 - `/pengaturan` menampilkan contoh cara ketik sesuai mata uang aktif.
 - `kamar/baru`: default `createMonthlyFee` `""` (dulu `"200000"` mentah yang
   bentrok dengan entri sen); placeholder ikut mata uang.

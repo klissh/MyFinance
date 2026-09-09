@@ -73,7 +73,7 @@ import {
 } from "@/lib/db"
 
 export default function GoalsPage() {
-  const { fmt, formatInput, formatValue, parseInput, symbol } = useMoney()
+  const { fmt, formatInput, formatValue, parseInput, symbol, zero } = useMoney()
   const [goals, setGoals] = useState<GoalRecord[]>([])
   const [transactions, setTransactions] = useState<TransactionRecord[]>([])
 
@@ -403,7 +403,8 @@ export default function GoalsPage() {
                       <label className="text-xs font-semibold text-muted-foreground">Nominal Setoran ({symbol})</label>
                       <Input
                         type="text"
-                        placeholder="0"
+                        inputMode="numeric"
+                        placeholder={zero}
                         value={depositAmount}
                         onChange={(e) => setDepositAmount(formatNumberWithDots(e.target.value))}
                         required
@@ -506,7 +507,8 @@ export default function GoalsPage() {
                       <label className="text-xs font-semibold text-muted-foreground">Nominal Target ({symbol})</label>
                       <Input
                         type="text"
-                        placeholder="0"
+                        inputMode="numeric"
+                        placeholder={zero}
                         value={newTargetAmount}
                         onChange={(e) => setNewTargetAmount(formatNumberWithDots(e.target.value))}
                         required
@@ -518,7 +520,8 @@ export default function GoalsPage() {
                         <label className="text-xs font-semibold text-muted-foreground">Setoran Awal (Opsional)</label>
                         <Input
                           type="text"
-                          placeholder="0"
+                          inputMode="numeric"
+                          placeholder={zero}
                           value={newInitialDeposit}
                           onChange={(e) => setNewInitialDeposit(formatNumberWithDots(e.target.value))}
                         />
@@ -793,6 +796,8 @@ export default function GoalsPage() {
               <label className="text-xs font-semibold text-muted-foreground">Nominal Target ({symbol})</label>
               <Input
                 type="text"
+                inputMode="numeric"
+                placeholder={zero}
                 value={editTarget}
                 onChange={(e) => setEditTarget(formatNumberWithDots(e.target.value))}
                 required

@@ -95,7 +95,7 @@ interface KosRoutineRequirement {
 }
 
 export default function KebutuhanBulananKosPage() {
-  const { fmt, formatInput, formatValue, parseInput, symbol } = useMoney()
+  const { fmt, formatInput, formatValue, parseInput, symbol, zero } = useMoney()
   // Notification Toast
   const [notification, setNotification] = useState<string | null>(null)
   const showNotification = (msg: string) => {
@@ -462,7 +462,8 @@ export default function KebutuhanBulananKosPage() {
                         <label className="text-xs font-semibold text-muted-foreground">Total Harga ({symbol})</label>
                         <Input
                           type="text"
-                          placeholder="0"
+                          inputMode="numeric"
+                          placeholder={zero}
                           value={newTotalPrice}
                           onChange={(e) => setNewTotalPrice(formatNumberWithDots(e.target.value))}
                           required
@@ -921,6 +922,8 @@ export default function KebutuhanBulananKosPage() {
                 <label className="text-xs font-semibold text-muted-foreground">Total Harga ({symbol})</label>
                 <Input
                   type="text"
+                  inputMode="numeric"
+                  placeholder={zero}
                   value={editTotal}
                   onChange={(e) => setEditTotal(formatNumberWithDots(e.target.value))}
                   required

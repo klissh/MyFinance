@@ -105,7 +105,7 @@ export interface TransactionItem {
 }
 
 export default function TransaksiPage() {
-  const { fmt, formatInput, formatValue, parseInput, symbol } = useMoney()
+  const { fmt, formatInput, formatValue, parseInput, symbol, zero } = useMoney()
   // Mock Initial Transactions State
   const [transactions, setTransactions] = useState<TransactionItem[]>([])
   const [accounts, setAccounts] = useState<FinancialAccountRecord[]>([])
@@ -485,7 +485,8 @@ export default function TransaksiPage() {
                       <label className="text-xs font-semibold text-muted-foreground">Nominal ({symbol})</label>
                       <Input
                         type="text"
-                        placeholder="0"
+                        inputMode="numeric"
+                        placeholder={zero}
                         value={newAmount}
                         onChange={(e) => setNewAmount(formatNumberWithDots(e.target.value))}
                         required
@@ -812,6 +813,8 @@ export default function TransaksiPage() {
                 <label className="text-xs font-semibold text-muted-foreground">Nominal ({symbol})</label>
                 <Input
                   type="text"
+                  inputMode="numeric"
+                  placeholder={zero}
                   value={editAmount}
                   onChange={(e) => setEditAmount(formatInput(e.target.value))}
                   required
