@@ -127,6 +127,23 @@ const BASE_STORAGE_KEYS = {
   // Sidecar: akun yang dipakai penalang saat bikin split bill (tabel
   // room_transactions tidak punya kolomnya). Dipakai saat rekonsiliasi ledger.
   SPLIT_META: "myfinance_split_payer_acct",
+  // Sidecar: akun + catatan untuk jadwal tagihan (tabel scheduled_payments
+  // tidak punya kolom account/notes).
+  SCHEDULED_META: "myfinance_scheduled_meta",
+}
+
+// Pilih akun personal untuk auto-catat transaksi: pakai `preferred` bila valid,
+// kalau tidak ambil akun bank pertama, lalu akun mana pun, terakhir "Bank BCA".
+function resolvePersonalAccount(
+  accounts: FinancialAccountRecord[],
+  preferred?: string,
+): string {
+  if (preferred && accounts.some((a) => a.name === preferred)) return preferred
+  return (
+    accounts.find((a) => a.accountCategory === "bank")?.name ||
+    accounts[0]?.name ||
+    "Bank BCA"
+  )
 }
 
 // Penanda tak-terlihat di kolom `notes` transaksi pribadi supaya rekonsiliasi
@@ -167,6 +184,25 @@ function writeSplitMeta(txId: string, account: string): void {
     const all = readSplitMeta()
     all[txId] = { account }
     localStorage.setItem(BASE_STORAGE_KEYS.SPLIT_META, JSON.stringify(all))
+  } catch {
+    // ignore
+  }
+}
+
+function readScheduledMeta(): Record<string, { account?: string; notes?: string }> {
+  if (typeof window === "undefined") return {}
+  try {
+    return JSON.parse(localStorage.getItem(BASE_STORAGE_KEYS.SCHEDULED_META) || "{}")
+  } catch {
+    return {}
+  }
+}
+function writeScheduledMeta(id: string, meta: { account?: string; notes?: string }): void {
+  if (typeof window === "undefined") return
+  try {
+    const all = readScheduledMeta()
+    all[id] = { ...all[id], ...meta }
+    localStorage.setItem(BASE_STORAGE_KEYS.SCHEDULED_META, JSON.stringify(all))
   } catch {
     // ignore
   }
@@ -874,12 +910,13 @@ export const goalService = {
     }
 
     // Auto-catat ke transaksi pribadi (mengurangi saldo akun sumber).
+    const accts = await accountService.getAll()
     await transactionService.add({
       title: `Setoran Tabungan: ${targetGoal.title}`,
       category: "Tabungan & Target",
       type: "out",
       amount,
-      account: accountName || "Bank BCA",
+      account: resolvePersonalAccount(accts, accountName),
       date: todayLocalISO(),
       formattedDate: formatIdDate(new Date()),
       notes: `Setoran otomatis ke target ${targetGoal.title}`,
@@ -902,16 +939,17 @@ export const scheduledService = {
           .order('created_at', { ascending: false })
 
         if (!error && data) {
+          const meta = readScheduledMeta()
           const mapped: ScheduledBillRecord[] = data.map((b) => ({
             id: b.id,
             title: b.title,
             amount: Number(b.amount),
             date: b.due_date,
-            formattedDate: new Date(b.due_date).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }),
+            formattedDate: formatIdDate(b.due_date),
             category: b.category,
-            account: "Bank BCA",
+            account: meta[b.id as string]?.account || "Bank BCA",
             status: b.status || "pending",
-            notes: b.title,
+            notes: meta[b.id as string]?.notes || "",
           }))
           if (typeof window !== "undefined") {
             const key = getUserStorageKey(BASE_STORAGE_KEYS.SCHEDULED)
@@ -973,6 +1011,9 @@ export const scheduledService = {
       }
     }
 
+    // Simpan account + notes di sidecar (tak ada kolomnya di tabel).
+    writeScheduledMeta(newBill.id, { account: item.account, notes: item.notes })
+
     const list = await this.getAll()
     const updated = [newBill, ...list.filter(b => b.id !== newBill.id)]
     if (typeof window !== "undefined") {
@@ -1002,12 +1043,13 @@ export const scheduledService = {
     }
 
     // Auto-catat ke transaksi pribadi (mengurangi saldo akun).
+    const accts = await accountService.getAll()
     await transactionService.add({
       title: `Pembayaran Tagihan: ${target.title}`,
       category: target.category,
       type: "out",
       amount: target.amount,
-      account: target.account || "Bank BCA",
+      account: resolvePersonalAccount(accts, target.account),
       date: todayLocalISO(),
       formattedDate: formatIdDate(new Date()),
       notes: target.notes || `Pelunasan jadwal tagihan ${target.title}`,
@@ -1635,11 +1677,7 @@ export const kamarService = {
     const splitMeta = readSplitMeta()
     const accounts = await accountService.getAll()
     const nameMap = await this._memberNameMap(room.id)
-    const resolveAcct = (preferred?: string): string => {
-      if (preferred && accounts.some((a) => a.name === preferred)) return preferred
-      const bank = accounts.find((a) => a.accountCategory === "bank")
-      return bank?.name || accounts[0]?.name || "Bank BCA"
-    }
+    const resolveAcct = (preferred?: string) => resolvePersonalAccount(accounts, preferred)
 
     type Split = { id: string; user_id: string; amount_owed: number; is_settled: boolean }
     type RTx = {
@@ -1812,6 +1850,7 @@ export const kamarService = {
             )
           }
 
+          const nameMap = await this._memberNameMap(room.id)
           const mapped: RequirementRecord[] = data.map((r: Record<string, unknown>) => ({
             id: r.id as string,
             title: r.title as string,
@@ -1819,14 +1858,9 @@ export const kamarService = {
             totalPrice: Number(r.total_price),
             splitPeopleCount: Number(r.split_people_count) || 1,
             perPersonPrice: Number(r.per_person_price),
-            dueDate: r.due_date
-              ? new Date(r.due_date as string).toLocaleDateString("id-ID", {
-                  day: "2-digit",
-                  month: "short",
-                  year: "numeric",
-                })
-              : "-",
-            responsiblePerson: (r.responsible_name as string) || "Ketua Kos",
+            dueDate: r.due_date ? formatIdDate(r.due_date as string) : "-",
+            responsiblePerson:
+              nameMap.get(r.responsible_user_id as string) || "Ketua Kos",
             isPaidByMe: paidReqIds.has(r.id as string),
           }))
 
@@ -1888,6 +1922,11 @@ export const kamarService = {
 
     if (isSupabaseConfigured && supabase && room?.id && room.id.includes("-")) {
       try {
+        // Petakan nama penanggung jawab → user_id anggota kamar (kalau ada).
+        const members = await this.getRoomMembers(room.id)
+        const responsibleId =
+          members.find((m) => m.name === item.responsiblePerson)?.userId || null
+
         const { data, error } = await supabase
           .from("room_requirements")
           .insert([
@@ -1899,7 +1938,8 @@ export const kamarService = {
               split_people_count: item.splitPeopleCount,
               per_person_price: perPerson,
               due_date: toISODate(item.dueDate),
-              responsible_user_id: null,
+              responsible_user_id:
+                responsibleId && responsibleId.includes("-") ? responsibleId : null,
             },
           ])
           .select()
@@ -1942,6 +1982,7 @@ export const kamarService = {
     if (!req || req.isPaidByMe) return
 
     const currentUser = authService.getCurrentUser()
+    const accts = await accountService.getAll()
 
     // 1. Auto-catat ke transaksi pribadi (potongan bagian saya).
     const tx = await transactionService.add({
@@ -1949,13 +1990,9 @@ export const kamarService = {
       category: "Kamar Kos",
       type: "out",
       amount: req.perPersonPrice,
-      account: "Bank BCA",
-      date: new Date().toISOString().split("T")[0],
-      formattedDate: new Date().toLocaleDateString("id-ID", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      }),
+      account: resolvePersonalAccount(accts),
+      date: todayLocalISO(),
+      formattedDate: formatIdDate(new Date()),
       notes: `Potongan otomatis setoran kebutuhan kos`,
     })
 

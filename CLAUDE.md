@@ -89,16 +89,32 @@ Perbaikan kode di `lib/db.ts` + halaman terkait (typecheck/lint/build lolos):
   kurs MYR ambil dari `/api/kurs` (bukan konstanta 4403).
 - Halaman **anggota kos**: kolom netto per anggota diturunkan dari matriks utang.
 
-### Yang masih menyisakan keterbatasan (bukan bug)
+## Ronde 3 (2026-09-09) — bereskan sisa keterbatasan
 
-- `scheduled_payments` tidak punya kolom `account`/`notes` → hilang saat
-  round-trip ke Supabase (fallback "Bank BCA" + notes = judul).
-- `responsible_user_id` di `room_requirements` masih di-set `null` (nama PJ hanya
-  disimpan di cache lokal; belum dipetakan nama → uuid).
-- Auto-log transaksi (bayar tagihan/setoran/pelunasan) selalu memakai akun
-  default "Bank BCA" — kalau akun itu tidak ada, saldo tidak berubah.
-- Verifikasi end-to-end dengan user login sungguhan belum dilakukan (belum ada
-  user auth; skema + RLS + tipe sudah dicek). Uji manual: signup → coba semua alur.
+- **Split bill — pengeluaran penalang.** `reconcileRoomLedger()` idempoten:
+  (a) saya penalang → pengeluaran = total dibayar; (b) saya lunasi bagian →
+  pengeluaran; (c) anggota lain lunasi ke saya → pemasukan. Penanda tersembunyi
+  `[#sbP/sbO/sbB:id]` di notes cegah dobel; `stripLedgerRef()` bersihkan untuk UI.
+  Dialog split punya pilihan akun penalang (`SPLIT_META` sidecar).
+- **`scheduled_payments` account/notes.** Sidecar `SCHEDULED_META` (`readScheduledMeta`
+  /`writeScheduledMeta`) — account & notes bertahan walau tabel tak punya kolomnya.
+- **`responsible_user_id`.** `addRequirement` petakan nama PJ → `user_id` anggota;
+  `getRequirements` resolve balik lewat `_memberNameMap`.
+- **Akun auto-log.** Helper `resolvePersonalAccount(accounts, preferred?)` dipakai
+  di semua auto-log (bayar tagihan/setoran/iuran/pelunasan) → akun pilihan → akun
+  bank pertama → akun apa pun → "Bank BCA". Tidak lagi hardcoded.
+
+### Keterbatasan yang tersisa
+
+- Sidecar (`*_META`) hanya per-device — detail kartu, akun penalang split, dan
+  account/notes jadwal tidak ikut pindah antar device (nilai uang & relasi utama
+  tetap sinkron via Supabase; ini cuma metadata pelengkap).
+- Verifikasi end-to-end dengan user login sungguhan belum dilakukan (skema + RLS +
+  tipe + build sudah dicek; pembuatan user auth otomatis diblokir). Uji manual:
+  signup → coba semua alur.
+- `room_transactions.status` tetap 'pending' kalau yang melunasi terakhir bukan
+  creator/payer (RLS) — tampilan tetap "settled" karena diturunkan dari `is_settled`
+  semua split.
 
 ## Yang TIDAK perlu dikerjakan otomatis
 
