@@ -427,8 +427,8 @@ export default function ScheduledPage() {
         )}
 
         {/* 1. Summary Metric Strip */}
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Card className="shadow-none border border-border p-5 gap-3 bg-card">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+          <Card className="shadow-none border border-border p-3.5 gap-2 bg-card sm:p-5 sm:gap-3">
             <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
               <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
                 Tagihan Mendatang Bulan Ini
@@ -438,14 +438,14 @@ export default function ScheduledPage() {
               </div>
             </CardHeader>
             <CardContent className="p-0 space-y-1">
-              <div className="text-2xl font-bold tracking-tight text-amber-600 dark:text-amber-400">
+              <div className="text-lg sm:text-2xl font-bold tracking-tight text-amber-600 dark:text-amber-400">
                 {pendingBills.length} Tagihan
               </div>
               <p className="text-xs text-muted-foreground">Perlu dibayarkan bulan ini</p>
             </CardContent>
           </Card>
 
-          <Card className="shadow-none border border-border p-5 gap-3 bg-card">
+          <Card className="shadow-none border border-border p-3.5 gap-2 bg-card sm:p-5 sm:gap-3">
             <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
               <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
                 Estimasi Total Nominal Terjadwal
@@ -455,14 +455,14 @@ export default function ScheduledPage() {
               </div>
             </CardHeader>
             <CardContent className="p-0 space-y-1">
-              <div className="text-2xl font-bold tracking-tight text-rose-600 dark:text-rose-400">
+              <div className="text-lg sm:text-2xl font-bold tracking-tight text-rose-600 dark:text-rose-400">
                 {fmt(totalPendingAmount)}
               </div>
               <p className="text-xs text-muted-foreground">Total alokasi tagihan terjadwal</p>
             </CardContent>
           </Card>
 
-          <Card className="shadow-none border border-border p-5 gap-3 bg-card">
+          <Card className="shadow-none border border-border p-3.5 gap-2 bg-card sm:p-5 sm:gap-3">
             <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
               <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
                 Tagihan Terdekat
@@ -481,7 +481,7 @@ export default function ScheduledPage() {
             </CardContent>
           </Card>
 
-          <Card className="shadow-none border border-border p-5 gap-3 bg-card">
+          <Card className="shadow-none border border-border p-3.5 gap-2 bg-card sm:p-5 sm:gap-3">
             <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
               <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
                 Auto-Sync Transaksi
@@ -491,7 +491,7 @@ export default function ScheduledPage() {
               </div>
             </CardHeader>
             <CardContent className="p-0 space-y-1">
-              <div className="text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">
+              <div className="text-lg sm:text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">
                 Tersambung
               </div>
               <p className="text-xs text-muted-foreground">Otomatis masuk ke kalender & log transaksi</p>
@@ -539,7 +539,11 @@ export default function ScheduledPage() {
           </CardHeader>
 
           <CardContent className="p-0 -mx-5">
-            <Table>
+            <p className="px-5 pb-2 text-[11px] text-muted-foreground sm:hidden">
+              Geser tabel ke samping untuk lihat semua kolom →
+            </p>
+            <div className="w-full overflow-x-auto">
+            <Table className="min-w-[720px]">
               <TableHeader>
                 <TableRow>
                   <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Tanggal Tempo</TableHead>
@@ -657,6 +661,7 @@ export default function ScheduledPage() {
                 )}
               </TableBody>
             </Table>
+            </div>
           </CardContent>
         </Card>
       </div>

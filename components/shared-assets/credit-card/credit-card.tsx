@@ -1,8 +1,11 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { cx, sortCx } from "@/lib/utils/cx";
 import { MastercardIcon, MastercardIconWhite, PaypassIcon } from "./icons";
+
+// Hindari warning "useLayoutEffect does nothing on the server" saat SSR.
+const useIsomorphicLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
 const styles = sortCx({
     // Normal
@@ -152,26 +155,45 @@ export const CreditCard = ({
     const originalWidth = 316;
     const originalHeight = 190;
 
+    // Kalau `width` tak diberikan, kartu menyesuaikan lebar wadahnya (maks 316px)
+    // supaya tidak pernah terpotong di grid / layar sempit.
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [measuredWidth, setMeasuredWidth] = useState<number | null>(null);
+
+    useIsomorphicLayoutEffect(() => {
+        if (width) return;
+        const el = containerRef.current;
+        if (!el) return;
+        const update = () => setMeasuredWidth(el.getBoundingClientRect().width);
+        update();
+        const ro = new ResizeObserver(update);
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, [width]);
+
+    const effectiveWidth = width ?? (measuredWidth ? Math.min(measuredWidth, originalWidth) : null);
+
     const { scale, scaledWidth, scaledHeight } = useMemo(() => {
-        if (!width)
+        if (!effectiveWidth)
             return {
                 scale: 1,
                 scaledWidth: originalWidth,
                 scaledHeight: originalHeight,
             };
 
-        return calculateScale(width, originalWidth, originalHeight);
-    }, [width]);
+        return calculateScale(effectiveWidth, originalWidth, originalHeight);
+    }, [effectiveWidth]);
 
     const activeStyle = styles[type] || styles["brand-dark"];
 
     return (
+        <div ref={containerRef} className={cx("w-full max-w-[316px] overflow-hidden", className)}>
         <div
             style={{
                 width: `${scaledWidth}px`,
                 height: `${scaledHeight}px`,
             }}
-            className={cx("relative flex", className)}
+            className="relative flex"
         >
             <div
                 style={{
@@ -235,6 +257,7 @@ export const CreditCard = ({
                     </div>
                 </div>
             </div>
+        </div>
         </div>
     );
 };

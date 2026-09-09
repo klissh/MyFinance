@@ -180,21 +180,21 @@ export default function DashboardPage() {
       {/* Main Content */}
       <div className="flex flex-1 flex-col gap-6 p-4 md:p-6 bg-background min-h-screen">
         {/* 1. Summary Metric Cards */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
           {metrics.map((m, idx) => (
-            <Card key={idx} className="shadow-none border border-border p-5 gap-3 bg-card">
+            <Card key={idx} className="shadow-none border border-border p-3.5 gap-2 bg-card sm:p-5 sm:gap-3">
               <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
                 <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
                   {m.title}
                 </CardTitle>
-                <div className="p-2 rounded-xl bg-muted/60 flex items-center justify-center">
+                <div className="p-2 rounded-xl bg-muted/60 flex items-center justify-center shrink-0">
                   {m.icon}
                 </div>
               </CardHeader>
 
               <CardContent className="p-0 space-y-1.5">
-                <div className="flex items-baseline justify-between">
-                  <div className="text-2xl font-bold tracking-tight text-foreground">{m.amount}</div>
+                <div className="flex items-baseline justify-between gap-1">
+                  <div className="text-lg sm:text-2xl font-bold tracking-tight text-foreground truncate">{m.amount}</div>
                   <Badge variant="outline" className="text-[11px] font-normal border-border">
                     {m.badge}
                   </Badge>

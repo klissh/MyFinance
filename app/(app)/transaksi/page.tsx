@@ -308,8 +308,8 @@ export default function TransaksiPage() {
         )}
 
         {/* 1. Summary Metric Cards */}
-        <div className="grid gap-4 md:grid-cols-3">
-          <Card className="shadow-none border border-border p-5 gap-3 bg-card">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3">
+          <Card className="shadow-none border border-border p-3.5 gap-2 bg-card sm:p-5 sm:gap-3">
             <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
               <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
                 Total Pemasukan (Filter)
@@ -319,14 +319,14 @@ export default function TransaksiPage() {
               </div>
             </CardHeader>
             <CardContent className="p-0 space-y-1">
-              <div className="text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">
+              <div className="text-lg sm:text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">
                 +{fmt(totalIncome)}
               </div>
               <p className="text-xs text-muted-foreground">Total pemasukan tercatat</p>
             </CardContent>
           </Card>
 
-          <Card className="shadow-none border border-border p-5 gap-3 bg-card">
+          <Card className="shadow-none border border-border p-3.5 gap-2 bg-card sm:p-5 sm:gap-3">
             <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
               <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
                 Total Pengeluaran (Filter)
@@ -336,14 +336,14 @@ export default function TransaksiPage() {
               </div>
             </CardHeader>
             <CardContent className="p-0 space-y-1">
-              <div className="text-2xl font-bold tracking-tight text-rose-600 dark:text-rose-400">
+              <div className="text-lg sm:text-2xl font-bold tracking-tight text-rose-600 dark:text-rose-400">
                 -{fmt(totalExpense)}
               </div>
               <p className="text-xs text-muted-foreground">Total pengeluaran tercatat</p>
             </CardContent>
           </Card>
 
-          <Card className="shadow-none border border-border p-5 gap-3 bg-card">
+          <Card className="shadow-none border border-border p-3.5 gap-2 bg-card sm:p-5 sm:gap-3">
             <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
               <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
                 Bersih Arus Kas (Net)
@@ -353,7 +353,7 @@ export default function TransaksiPage() {
               </div>
             </CardHeader>
             <CardContent className="p-0 space-y-1">
-              <div className={`text-2xl font-bold tracking-tight ${
+              <div className={`text-lg sm:text-2xl font-bold tracking-tight ${
                 totalIncome - totalExpense >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
               }`}>
                 {fmt(totalIncome - totalExpense)}
@@ -590,7 +590,11 @@ export default function TransaksiPage() {
 
           {/* Table */}
           <CardContent className="p-0 -mx-5">
-            <Table>
+            <p className="px-5 pb-2 text-[11px] text-muted-foreground sm:hidden">
+              Geser tabel ke samping untuk lihat semua kolom →
+            </p>
+            <div className="w-full overflow-x-auto">
+            <Table className="min-w-[720px]">
               <TableHeader>
                 <TableRow>
                   <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Tanggal</TableHead>
@@ -704,6 +708,7 @@ export default function TransaksiPage() {
                 )}
               </TableBody>
             </Table>
+            </div>
           </CardContent>
 
           {/* Pagination Controls */}

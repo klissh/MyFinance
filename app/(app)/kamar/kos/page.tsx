@@ -376,8 +376,8 @@ export default function TransaksiKosPage() {
         )}
 
         {/* 1. Summary Metric Cards (Clean 3-Column Grid) */}
-        <div className="grid gap-4 md:grid-cols-3">
-          <Card className="shadow-none border border-border p-5 gap-3 bg-card">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3">
+          <Card className="shadow-none border border-border p-3.5 gap-2 bg-card sm:p-5 sm:gap-3">
             <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
               <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
                 Tunggakan / Tagihan Saya
@@ -387,14 +387,14 @@ export default function TransaksiKosPage() {
               </div>
             </CardHeader>
             <CardContent className="p-0 space-y-1">
-              <div className="text-2xl font-bold tracking-tight text-rose-600 dark:text-rose-400">
+              <div className="text-lg sm:text-2xl font-bold tracking-tight text-rose-600 dark:text-rose-400">
                 {fmt(totalMyOwed)}
               </div>
               <p className="text-xs text-muted-foreground">Harus dibayar ke penghuni lain</p>
             </CardContent>
           </Card>
 
-          <Card className="shadow-none border border-border p-5 gap-3 bg-card">
+          <Card className="shadow-none border border-border p-3.5 gap-2 bg-card sm:p-5 sm:gap-3">
             <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
               <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
                 Piutang Saya (Ditalangi Saya)
@@ -404,14 +404,14 @@ export default function TransaksiKosPage() {
               </div>
             </CardHeader>
             <CardContent className="p-0 space-y-1">
-              <div className="text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">
+              <div className="text-lg sm:text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">
                 +{fmt(totalOthersOweMe)}
               </div>
               <p className="text-xs text-muted-foreground">Penghuni lain utang ke saya</p>
             </CardContent>
           </Card>
 
-          <Card className="shadow-none border border-border p-5 gap-3 bg-card">
+          <Card className="shadow-none border border-border p-3.5 gap-2 bg-card sm:p-5 sm:gap-3">
             <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
               <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
                 Bagian Saya (Bulan Ini)
@@ -421,7 +421,7 @@ export default function TransaksiKosPage() {
               </div>
             </CardHeader>
             <CardContent className="p-0 space-y-1">
-              <div className="text-2xl font-bold tracking-tight">
+              <div className="text-lg sm:text-2xl font-bold tracking-tight">
                 {fmt(totalMyShareMonth)}
               </div>
               <p className="text-xs text-muted-foreground">
@@ -661,6 +661,9 @@ export default function TransaksiKosPage() {
 
           {/* Table */}
           <CardContent className="p-0 overflow-hidden">
+            <p className="pb-2 text-[11px] text-muted-foreground sm:hidden">
+              Geser tabel ke samping untuk lihat semua kolom →
+            </p>
             <div className="w-full overflow-x-auto">
               <Table className="w-full min-w-[700px]">
                 <TableHeader>

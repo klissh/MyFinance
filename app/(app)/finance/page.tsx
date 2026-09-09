@@ -580,8 +580,8 @@ export default function FinancePage() {
         )}
 
         {/* 1. Metric Summary Cards */}
-        <div className="grid gap-4 md:grid-cols-3">
-          <Card className="shadow-none border border-border p-5 gap-3 bg-card">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3">
+          <Card className="shadow-none border border-border p-3.5 gap-2 bg-card sm:p-5 sm:gap-3">
             <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
               <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
                 Total Saldo Keseluruhan
@@ -591,14 +591,14 @@ export default function FinancePage() {
               </div>
             </CardHeader>
             <CardContent className="p-0 space-y-1">
-              <div className="text-2xl font-bold tracking-tight">
+              <div className="text-lg sm:text-2xl font-bold tracking-tight">
                 {fmt(totalBalance)}
               </div>
               <p className="text-xs text-muted-foreground">Tersimpan di {totalAccountsCount} akun aktif</p>
             </CardContent>
           </Card>
 
-          <Card className="shadow-none border border-border p-5 gap-3 bg-card">
+          <Card className="shadow-none border border-border p-3.5 gap-2 bg-card sm:p-5 sm:gap-3">
             <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
               <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
                 Jumlah Akun Terdaftar
@@ -608,14 +608,14 @@ export default function FinancePage() {
               </div>
             </CardHeader>
             <CardContent className="p-0 space-y-1">
-              <div className="text-2xl font-bold tracking-tight">
+              <div className="text-lg sm:text-2xl font-bold tracking-tight">
                 {totalAccountsCount} Akun Active
               </div>
               <p className="text-xs text-muted-foreground">Bank, Cash, dan E-Wallet</p>
             </CardContent>
           </Card>
 
-          <Card className="shadow-none border border-border p-5 gap-3 bg-card">
+          <Card className="shadow-none border border-border p-3.5 gap-2 bg-card sm:p-5 sm:gap-3">
             <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
               <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
                 Alokasi Saldo Terbesar
@@ -625,7 +625,7 @@ export default function FinancePage() {
               </div>
             </CardHeader>
             <CardContent className="p-0 space-y-1">
-              <div className="text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">
+              <div className="text-lg sm:text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400 break-words">
                 {topAccount ? `${topAccount.name} (${topPct}%)` : "Belum ada"}
               </div>
               <p className="text-xs text-muted-foreground">
@@ -646,7 +646,7 @@ export default function FinancePage() {
             </div>
           </div>
 
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {accounts.length === 0 ? (
               <div className="col-span-full border border-border rounded-2xl p-8 text-center bg-card space-y-3">
                 <Wallet className="size-10 text-muted-foreground/50 mx-auto" />
@@ -780,7 +780,11 @@ export default function FinancePage() {
           </CardHeader>
 
           <CardContent className="p-0 -mx-5">
-            <Table>
+            <p className="px-5 pb-2 text-[11px] text-muted-foreground sm:hidden">
+              Geser tabel ke samping untuk lihat semua kolom →
+            </p>
+            <div className="w-full overflow-x-auto">
+            <Table className="min-w-[640px]">
               <TableHeader>
                 <TableRow>
                   <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Sumber Dana</TableHead>
@@ -839,6 +843,7 @@ export default function FinancePage() {
                 )}
               </TableBody>
             </Table>
+            </div>
           </CardContent>
         </Card>
       </div>

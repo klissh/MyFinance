@@ -276,8 +276,8 @@ export default function GoalsPage() {
         )}
 
         {/* 1. Summary Metric Cards (Computed Dynamically from DB) */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card className="shadow-none border border-border p-5 gap-3 bg-card">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+          <Card className="shadow-none border border-border p-3.5 gap-2 bg-card sm:p-5 sm:gap-3">
             <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
               <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
                 Total Uang Ketabung
@@ -287,7 +287,7 @@ export default function GoalsPage() {
               </div>
             </CardHeader>
             <CardContent className="p-0 space-y-1">
-              <div className="text-2xl font-bold tracking-tight text-foreground">
+              <div className="text-lg sm:text-2xl font-bold tracking-tight text-foreground">
                 {fmt(totalSavedAmount)}
               </div>
               <p className="text-xs text-muted-foreground">Terkumpul untuk seluruh target</p>
@@ -297,7 +297,7 @@ export default function GoalsPage() {
             </CardContent>
           </Card>
 
-          <Card className="shadow-none border border-border p-5 gap-3 bg-card">
+          <Card className="shadow-none border border-border p-3.5 gap-2 bg-card sm:p-5 sm:gap-3">
             <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
               <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
                 Total Alokasi Target
@@ -307,14 +307,14 @@ export default function GoalsPage() {
               </div>
             </CardHeader>
             <CardContent className="p-0 space-y-1">
-              <div className="text-2xl font-bold tracking-tight">
+              <div className="text-lg sm:text-2xl font-bold tracking-tight">
                 {fmt(totalTargetAmount)}
               </div>
               <p className="text-xs text-muted-foreground">{goals.length} barang & target impian aktif</p>
             </CardContent>
           </Card>
 
-          <Card className="shadow-none border border-border p-5 gap-3 bg-card">
+          <Card className="shadow-none border border-border p-3.5 gap-2 bg-card sm:p-5 sm:gap-3">
             <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
               <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
                 Sisa Anggaran Bulanan
@@ -324,7 +324,7 @@ export default function GoalsPage() {
               </div>
             </CardHeader>
             <CardContent className="p-0 space-y-1">
-              <div className="text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">
+              <div className="text-lg sm:text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">
                 {fmt(remainingBudget)}
               </div>
               <p className="text-xs text-muted-foreground">
@@ -333,7 +333,7 @@ export default function GoalsPage() {
             </CardContent>
           </Card>
 
-          <Card className="shadow-none border border-border p-5 gap-3 bg-card">
+          <Card className="shadow-none border border-border p-3.5 gap-2 bg-card sm:p-5 sm:gap-3">
             <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
               <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
                 Total Uang Kepake (Bulan Ini)
@@ -343,7 +343,7 @@ export default function GoalsPage() {
               </div>
             </CardHeader>
             <CardContent className="p-0 space-y-1">
-              <div className="text-2xl font-bold tracking-tight text-rose-600 dark:text-rose-400">
+              <div className="text-lg sm:text-2xl font-bold tracking-tight text-rose-600 dark:text-rose-400">
                 {fmt(totalExpense)}
               </div>
               <p className="text-xs text-muted-foreground">
