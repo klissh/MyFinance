@@ -91,11 +91,22 @@ Perbaikan kode di `lib/db.ts` + halaman terkait (typecheck/lint/build lolos):
 
 ## Ronde 3 (2026-09-09) — bereskan sisa keterbatasan
 
-- **Split bill — pengeluaran penalang.** `reconcileRoomLedger()` idempoten:
-  (a) saya penalang → pengeluaran = total dibayar; (b) saya lunasi bagian →
-  pengeluaran; (c) anggota lain lunasi ke saya → pemasukan. Penanda tersembunyi
-  `[#sbP/sbO/sbB:id]` di notes cegah dobel; `stripLedgerRef()` bersihkan untuk UI.
-  Dialog split punya pilihan akun penalang (`SPLIT_META` sidecar).
+- **Split bill — model "bagian saya".** `reconcileRoomLedger()` idempoten,
+  penanda `[#sbS:id]` di notes (dibersihkan UI via `stripLedgerRef`).
+  **Tiap orang HANYA mencatat BAGIAN-NYA** sebagai pengeluaran, bukan total:
+  - Penalang: `addSharedTransaction` bikin baris `room_transaction_splits` untuk
+    SEMUA yang menanggung; baris penalang langsung `is_settled: true` → bagiannya
+    tercatat saat itu juga.
+  - Anggota lain: bagiannya tercatat saat `settleMyShare()` (flip `is_settled`).
+  - Tidak ada "pengembalian" sebagai pemasukan — talangan antar anggota = pinjaman,
+    tercermin di kartu "Piutang/Tunggakan" & metrik, bukan arus kas pribadi.
+  - **Migrasi otomatis:** reconcile mendeteksi entri model lama (`sbP/sbO/sbB`),
+    `transactionService._purgeByNotePattern()` menghapusnya + membalik saldo, lalu
+    dibuat ulang sebagai `sbS`.
+  - Dialog split: pilihan akun penalang (`SPLIT_META` sidecar).
+  - Halaman kos: kolom "Total Nominal" tampil "Rp X ÷ N orang"; "Bagian Saya"
+    selalu tampil rupiah + status; metrik "Total Transaksi Kos" → "Bagian Saya
+    (Bulan Ini)".
 - **`scheduled_payments` account/notes.** Sidecar `SCHEDULED_META` (`readScheduledMeta`
   /`writeScheduledMeta`) — account & notes bertahan walau tabel tak punya kolomnya.
 - **`responsible_user_id`.** `addRequirement` petakan nama PJ → `user_id` anggota;

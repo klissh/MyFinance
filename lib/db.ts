@@ -148,22 +148,25 @@ function resolvePersonalAccount(
 
 // Penanda tak-terlihat di kolom `notes` transaksi pribadi supaya rekonsiliasi
 // split bill IDEMPOTEN (tidak dobel walau dijalankan berkali-kali / di banyak device).
-//   sbP = pengeluaran talangan (saya penalang, bayar penuh ke vendor)
-//   sbO = pengeluaran pelunasan bagian saya ke penalang
-//   sbB = pemasukan: anggota lain mengembalikan uang talangan ke saya
-function ledgerRef(kind: "sbP" | "sbO" | "sbB", id: string): string {
+//   sbS = pengeluaran = BAGIAN SAYA pada satu split bill (model saat ini)
+//   sbP/sbO/sbB = penanda model LAMA (talangan penuh + pengembalian) — dibersihkan
+//                 otomatis oleh reconcileRoomLedger lalu digantikan sbS.
+type LedgerKind = "sbS"
+function ledgerRef(kind: LedgerKind, id: string): string {
   return `[#${kind}:${id.replace(/[^a-z0-9]/gi, "").slice(0, 16).toLowerCase()}]`
 }
-const LEDGER_REF_RE = /\s*\[#sb[POB]:[a-z0-9]{3,16}\]/gi
+const LEDGER_REF_RE = /\s*\[#sb[SPOB]:[a-z0-9]{3,16}\]/gi
+// Penanda model LAMA saja (untuk migrasi otomatis).
+const LEGACY_LEDGER_RE = /\[#sb[POB]:[a-z0-9]{3,16}\]/i
 export function stripLedgerRef(notes?: string | null): string {
   return (notes || "").replace(LEDGER_REF_RE, "").trim()
 }
 function collectLedgerRefs(notes: string | null | undefined, into: Set<string>): void {
-  for (const m of (notes || "").matchAll(/\[#(sb[POB]):([a-z0-9]{3,16})\]/gi)) {
+  for (const m of (notes || "").matchAll(/\[#(sb[SPOB]):([a-z0-9]{3,16})\]/gi)) {
     into.add(`${m[1].toLowerCase()}:${m[2].toLowerCase()}`)
   }
 }
-function refKey(kind: "sbP" | "sbO" | "sbB", id: string): string {
+function refKey(kind: LedgerKind, id: string): string {
   return `${kind.toLowerCase()}:${id.replace(/[^a-z0-9]/gi, "").slice(0, 16).toLowerCase()}`
 }
 
@@ -676,6 +679,73 @@ export const transactionService = {
       }
     }
     return (await this.getAll()).map((t) => t.notes || "")
+  },
+
+  /**
+   * Hapus transaksi milik user yang notes-nya cocok `pattern`, sekaligus
+   * mengembalikan efeknya ke saldo akun (kebalikan dari `add`). Dipakai untuk
+   * migrasi entri ledger split-bill model lama.
+   */
+  async _purgeByNotePattern(pattern: RegExp): Promise<void> {
+    const currentUser = authService.getCurrentUser()
+
+    type Row = { id: string; notes: string; type: "in" | "out"; amount: number; account: string }
+    let rows: Row[] = []
+
+    if (isSupabaseConfigured && supabase && currentUser?.id && currentUser.id.includes("-")) {
+      try {
+        const { data } = await supabase
+          .from("transactions")
+          .select("id, notes, type, amount, account_id, accounts(name)")
+          .eq("user_id", currentUser.id)
+        rows = (data || [])
+          .filter((t: { notes?: string }) => pattern.test(t.notes || ""))
+          .map((t: Record<string, unknown>) => ({
+            id: t.id as string,
+            notes: (t.notes as string) || "",
+            type: t.type as "in" | "out",
+            amount: Number(t.amount),
+            account: (t.accounts as { name?: string } | null)?.name || "",
+          }))
+        for (const r of rows) {
+          if (r.id.includes("-")) {
+            await supabase.from("transactions").delete().eq("id", r.id)
+          }
+        }
+      } catch (err) {
+        console.warn("_purgeByNotePattern exception:", err)
+      }
+    } else if (typeof window !== "undefined") {
+      try {
+        rows = (JSON.parse(
+          localStorage.getItem(getUserStorageKey(BASE_STORAGE_KEYS.TRANSACTIONS)) || "[]",
+        ) as TransactionRecord[])
+          .filter((t) => pattern.test(t.notes || ""))
+          .map((t) => ({ id: t.id, notes: t.notes || "", type: t.type, amount: t.amount, account: t.account }))
+      } catch {
+        rows = []
+      }
+    }
+
+    // Balikkan efek ke saldo: entri "out" dulu mengurangi → sekarang tambah lagi.
+    for (const r of rows) {
+      const delta = r.type === "out" ? r.amount : -r.amount
+      await accountService.adjustBalanceByName(r.account, delta)
+    }
+
+    // Bersihkan cache lokal.
+    if (typeof window !== "undefined" && rows.length > 0) {
+      try {
+        const key = getUserStorageKey(BASE_STORAGE_KEYS.TRANSACTIONS)
+        const ids = new Set(rows.map((r) => r.id))
+        const kept = (JSON.parse(localStorage.getItem(key) || "[]") as TransactionRecord[]).filter(
+          (t) => !ids.has(t.id),
+        )
+        localStorage.setItem(key, JSON.stringify(kept))
+      } catch {
+        // ignore
+      }
+    }
   },
 
   /**
@@ -1543,14 +1613,17 @@ export const kamarService = {
           .single()
 
         if (!error && data) {
-          // Buat baris utang per anggota (kecuali si penalang).
-          const splitRows = nonPayerSharers
+          // Satu baris split per anggota yang menanggung. Bagian si penalang
+          // langsung `is_settled: true` (dia sudah bayar duluan) — bagian anggota
+          // lain `false` sampai mereka melunasi.
+          const splitRows = item.splitUserIds
             .filter((id) => id.includes("-"))
             .map((userId) => ({
               transaction_id: data.id,
               user_id: userId,
               amount_owed: perPerson,
-              is_settled: false,
+              is_settled: userId === item.paidByUserId,
+              settled_at: userId === item.paidByUserId ? new Date().toISOString() : null,
             }))
           if (splitRows.length > 0) {
             const { error: splitErr } = await supabase
@@ -1641,19 +1714,19 @@ export const kamarService = {
   },
 
   /**
-   * Selaraskan transaksi pribadi user dengan kondisi split bill kamar.
-   * IDEMPOTEN (pakai penanda di notes) — aman dipanggil berkali-kali / di banyak device.
-   * Ada guard "in-flight" supaya panggilan bersamaan (mis. beberapa komponen mount
-   * sekaligus) tidak menghasilkan transaksi dobel dalam satu sesi.
+   * Selaraskan transaksi pribadi user dengan split bill kamar.
+   * IDEMPOTEN (penanda `[#sbS:id]` di notes) — aman dipanggil berkali-kali / di
+   * banyak device. Guard "in-flight" mencegah panggilan paralel bikin dobel.
    *
-   * Tiga kejadian yang dicatat ke transaksi pribadi:
-   *   (a) Saya penalang        → pengeluaran = TOTAL yang saya bayar ke vendor
-   *   (b) Saya melunasi bagian  → pengeluaran = bagian saya, ke penalang
-   *   (c) Anggota lain melunasi → pemasukan  = uang talangan kembali ke saya
+   * MODEL: setiap orang hanya mencatat BAGIAN-NYA sendiri sebagai pengeluaran
+   * (bukan total). Penalang: bagiannya tercatat saat split dibuat (split miliknya
+   * langsung `is_settled`). Anggota lain: bagiannya tercatat saat mereka melunasi.
+   * Tidak ada "pengembalian" sebagai pemasukan — talangan antar anggota adalah
+   * pinjaman yang tercermin di kartu "Piutang / Tunggakan", bukan di arus kas.
+   *
+   * Juga membersihkan entri model LAMA (talangan penuh + pengembalian) sekali.
    */
   reconcileRoomLedger(roomId?: string): Promise<void> {
-    // Serialkan: setiap panggilan jalan SETELAH yang sebelumnya selesai, sehingga
-    // tidak ada dobel-tulis dan setiap panggilan tetap melihat state terbaru.
     const run = () => this._doReconcileRoomLedger(roomId)
     const next = _reconcileInFlight ? _reconcileInFlight.then(run, run) : run()
     _reconcileInFlight = next
@@ -1671,6 +1744,13 @@ export const kamarService = {
     const myId = currentUser?.id
     if (!myId) return
 
+    const rawNotes = await transactionService._rawNotes()
+
+    // Migrasi: buang entri model lama (sbP/sbO/sbB) sekali; nanti dibuat ulang sbS.
+    if (rawNotes.some((n) => LEGACY_LEDGER_RE.test(n))) {
+      await transactionService._purgeByNotePattern(LEGACY_LEDGER_RE)
+    }
+
     const seen = new Set<string>()
     for (const n of await transactionService._rawNotes()) collectLedgerRefs(n, seen)
 
@@ -1684,6 +1764,7 @@ export const kamarService = {
       id: string
       title: string
       total_amount: number
+      per_person_amount: number
       paid_by_user_id: string
       room_transaction_splits: Split[]
     }
@@ -1692,12 +1773,11 @@ export const kamarService = {
     if (isSupabaseConfigured && supabase && myId.includes("-") && room.id.includes("-")) {
       const { data, error } = await supabase
         .from("room_transactions")
-        .select("id, title, total_amount, paid_by_user_id, room_transaction_splits(id, user_id, amount_owed, is_settled)")
+        .select("id, title, total_amount, per_person_amount, paid_by_user_id, room_transaction_splits(id, user_id, amount_owed, is_settled)")
         .eq("room_id", room.id)
       if (error || !data) return
       rows = data as RTx[]
     } else {
-      // Mode lokal: dari cache SHARED_TX (biasanya single-user, split kosong).
       try {
         const local: SharedTransactionRecord[] = JSON.parse(
           localStorage.getItem(getUserStorageKey(BASE_STORAGE_KEYS.SHARED_TX)) || "[]",
@@ -1706,6 +1786,7 @@ export const kamarService = {
           id: t.id,
           title: t.title,
           total_amount: t.totalAmount,
+          per_person_amount: t.perPersonAmount,
           paid_by_user_id: t.paidByUserId || "",
           room_transaction_splits: [],
         }))
@@ -1716,60 +1797,43 @@ export const kamarService = {
 
     for (const t of rows) {
       const splits = t.room_transaction_splits || []
+      const iAmPayer = t.paid_by_user_id === myId
 
-      // (a) Saya penalang → pengeluaran sebesar total yang saya keluarkan.
-      if (t.paid_by_user_id === myId && !seen.has(refKey("sbP", t.id))) {
-        await transactionService.add({
-          title: `Talangan Kos: ${t.title}`,
-          category: "Kamar Kos",
-          type: "out",
-          amount: Number(t.total_amount),
-          account: resolveAcct(splitMeta[t.id]?.account),
-          date: todayLocalISO(),
-          formattedDate: formatIdDate(new Date()),
-          notes: `Saya menalangi total tagihan bersama kos ${ledgerRef("sbP", t.id)}`,
-        })
-        seen.add(refKey("sbP", t.id))
-      }
+      // Bagian SAYA yang sudah "terbayar" (payer: begitu split dibuat;
+      // anggota lain: begitu melunasi) → catat sebagai pengeluaran sekali.
+      const mySettledSplit = splits.find((s) => s.user_id === myId && s.is_settled)
 
-      for (const s of splits) {
-        if (!s.is_settled) continue
+      // Fallback untuk data tanpa baris split milik payer (mis. dibuat versi lama
+      // yang tidak menyimpan split penalang): pakai id transaksi sebagai kunci.
+      const key = mySettledSplit ? mySettledSplit.id : iAmPayer ? t.id : null
+      if (!key) continue
+      if (seen.has(refKey("sbS", key))) continue
 
-        // (b) Bagian saya sudah saya lunasi ke penalang → pengeluaran.
-        if (s.user_id === myId && !seen.has(refKey("sbO", s.id))) {
-          const payerName = nameMap.get(t.paid_by_user_id) || "penalang"
-          await transactionService.add({
-            title: `Bayar Bagian Split: ${t.title}`,
-            category: "Kamar Kos",
-            type: "out",
-            amount: Number(s.amount_owed),
-            account: resolveAcct(),
-            date: todayLocalISO(),
-            formattedDate: formatIdDate(new Date()),
-            notes: `Pelunasan bagian saya ke ${payerName} ${ledgerRef("sbO", s.id)}`,
-          })
-          seen.add(refKey("sbO", s.id))
-        }
+      // Kalau penalang tidak termasuk yang menanggung, dia tidak punya bagian.
+      const payerHasNoSplitButIsSharer =
+        iAmPayer && !mySettledSplit &&
+        Math.abs(t.total_amount - Number(t.per_person_amount) * (splits.length + 1)) <=
+          splits.length + 1
+      const shareAmount = mySettledSplit
+        ? Number(mySettledSplit.amount_owed)
+        : payerHasNoSplitButIsSharer
+          ? Number(t.per_person_amount)
+          : 0
+      if (shareAmount <= 0) continue
 
-        // (c) Saya penalang & anggota lain sudah melunasi → pemasukan.
-        if (
-          t.paid_by_user_id === myId &&
-          s.user_id !== myId &&
-          !seen.has(refKey("sbB", s.id))
-        ) {
-          await transactionService.add({
-            title: `Pengembalian Talangan: ${t.title}`,
-            category: "Kamar Kos",
-            type: "in",
-            amount: Number(s.amount_owed),
-            account: resolveAcct(splitMeta[t.id]?.account),
-            date: todayLocalISO(),
-            formattedDate: formatIdDate(new Date()),
-            notes: `Anggota kos mengembalikan uang talangan ${ledgerRef("sbB", s.id)}`,
-          })
-          seen.add(refKey("sbB", s.id))
-        }
-      }
+      await transactionService.add({
+        title: `Split Bill Kos: ${t.title}`,
+        category: "Kamar Kos",
+        type: "out",
+        amount: shareAmount,
+        account: resolveAcct(iAmPayer ? splitMeta[t.id]?.account : undefined),
+        date: todayLocalISO(),
+        formattedDate: formatIdDate(new Date()),
+        notes: iAmPayer
+          ? `Bagian saya dari tagihan bersama "${t.title}" ${ledgerRef("sbS", key)}`
+          : `Bayar bagian saya ke ${nameMap.get(t.paid_by_user_id) || "penalang"} untuk "${t.title}" ${ledgerRef("sbS", key)}`,
+      })
+      seen.add(refKey("sbS", key))
     }
   },
 

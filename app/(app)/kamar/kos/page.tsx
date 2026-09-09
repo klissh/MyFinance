@@ -186,10 +186,11 @@ export default function TransaksiKosPage() {
     })
 
     await reloadTransactions()
+    const myShareRp = Math.ceil(total / Math.max(1, selectedMemberIds.length))
     showNotification(
       payerIsMe
-        ? `Talangan "${newTitle}" Rp ${total.toLocaleString("id-ID")} dicatat. Rp ${total.toLocaleString("id-ID")} otomatis masuk sebagai pengeluaran di transaksi pribadi kamu.`
-        : `Talangan "${newTitle}" Rp ${total.toLocaleString("id-ID")} dicatat atas nama ${payer?.name}.`,
+        ? `Split bill "${newTitle}" (total Rp ${total.toLocaleString("id-ID")}) dicatat. Bagian kamu Rp ${myShareRp.toLocaleString("id-ID")} otomatis masuk sebagai pengeluaran di transaksi pribadi.`
+        : `Split bill "${newTitle}" dicatat, dibayar oleh ${payer?.name}. Bagianmu Rp ${myShareRp.toLocaleString("id-ID")} — bayar dari tabel untuk mencatatnya.`,
     )
 
     setNewTitle("")
@@ -210,7 +211,7 @@ export default function TransaksiKosPage() {
     setSettlingId(null)
 
     showNotification(
-      `Pelunasan Rp ${amt.toLocaleString("id-ID")} ke ${targetTx.paidBy} untuk "${targetTx.title}" selesai & tercatat di log pribadi!`,
+      `Bagianmu Rp ${amt.toLocaleString("id-ID")} untuk "${targetTx.title}" ditandai lunas ke ${targetTx.paidBy} & tercatat sebagai pengeluaran di transaksi pribadi.`,
     )
   }
 
@@ -221,7 +222,10 @@ export default function TransaksiKosPage() {
   const totalOthersOweMe = transactions
     .filter((t) => t.myShare < 0)
     .reduce((sum, t) => sum + Math.abs(t.myShare), 0)
+  // Total belanja bersama (semua anggota), bukan bagian saya.
   const totalKosTransactionsMonth = transactions.reduce((sum, t) => sum + t.totalAmount, 0)
+  // Total bagian SAYA dari semua split bill bulan ini.
+  const totalMyShareMonth = transactions.reduce((sum, t) => sum + t.perPersonAmount, 0)
 
   // Filtered Transactions Logic
   const filteredTransactions = transactions.filter((t) => {
@@ -323,7 +327,7 @@ export default function TransaksiKosPage() {
           <Card className="shadow-none border border-border p-5 gap-3 bg-card">
             <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
               <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
-                Total Transaksi Kos (Bulan Ini)
+                Bagian Saya (Bulan Ini)
               </CardTitle>
               <div className="p-2 rounded-xl bg-muted/60 text-foreground">
                 <Receipt className="size-4" />
@@ -331,9 +335,11 @@ export default function TransaksiKosPage() {
             </CardHeader>
             <CardContent className="p-0 space-y-1">
               <div className="text-2xl font-bold tracking-tight">
-                Rp {totalKosTransactionsMonth.toLocaleString("id-ID")}
+                Rp {totalMyShareMonth.toLocaleString("id-ID")}
               </div>
-              <p className="text-xs text-muted-foreground">{transactions.length} transaksi bersama</p>
+              <p className="text-xs text-muted-foreground">
+                dari total belanja bersama Rp {totalKosTransactionsMonth.toLocaleString("id-ID")} ({transactions.length} transaksi)
+              </p>
             </CardContent>
           </Card>
         </div>
@@ -613,18 +619,24 @@ export default function TransaksiKosPage() {
                         </TableCell>
                         <TableCell className="px-3.5 py-3 font-bold text-xs text-foreground whitespace-nowrap">
                           Rp {tx.totalAmount.toLocaleString("id-ID")}
+                          <span className="block text-[10px] font-normal text-muted-foreground">
+                            ÷ {tx.splitBetween.length} orang
+                          </span>
                         </TableCell>
-                        <TableCell className="px-3.5 py-3 text-right font-bold text-xs whitespace-nowrap">
+                        <TableCell className="px-3.5 py-3 text-right text-xs whitespace-nowrap">
+                          <span className="font-bold text-foreground">
+                            Rp {tx.perPersonAmount.toLocaleString("id-ID")}
+                          </span>
                           {tx.myShare > 0 ? (
-                            <span className="text-rose-600 dark:text-rose-400">
-                              -Rp {tx.myShare.toLocaleString("id-ID")}
+                            <span className="block text-[10px] text-rose-600 dark:text-rose-400">
+                              belum dibayar
                             </span>
                           ) : tx.myShare < 0 ? (
-                            <span className="text-emerald-600 dark:text-emerald-400">
-                              +Rp {Math.abs(tx.myShare).toLocaleString("id-ID")}
+                            <span className="block text-[10px] text-emerald-600 dark:text-emerald-400">
+                              +Rp {Math.abs(tx.myShare).toLocaleString("id-ID")} piutang
                             </span>
                           ) : (
-                            <span className="text-muted-foreground font-normal text-xs">Lunas</span>
+                            <span className="block text-[10px] text-muted-foreground">lunas</span>
                           )}
                         </TableCell>
                         <TableCell className="px-3.5 py-3 text-right whitespace-nowrap">
