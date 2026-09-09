@@ -234,6 +234,30 @@ UPDATE+DELETE (anggota kamar), `room_members` DELETE (Ketua Kos keluarkan anggot
 - `/finance`: Select "Jenis / Jaringan Kartu" di dialog Tambah & Ubah sumber dana;
   `<CreditCard network={acc.cardNetwork} />`.
 
+## Ronde 8 (2026-09-10) — responsif mobile menyeluruh + tabel
+
+- **`SidebarInset`** (`components/ui/sidebar.tsx`): `min-w-0 max-w-full` — akar
+  masalah "halaman geser horizontal di HP" (flex child tanpa min-width). Fix ini
+  membuat semua `overflow-x-auto` di dalam bekerja benar.
+- **`DialogContent`** (`components/ui/dialog.tsx`): `max-h-[calc(100dvh-2rem)]
+  overflow-y-auto` — form panjang bisa di-scroll, tidak terpotong di layar pendek.
+- **`components/ui/list-card.tsx`** (baru): `ListCard` / `ListCardHead` /
+  `ListCardMeta` — pengganti baris tabel di layar sempit.
+- **Semua tabel data** kini render ganda: `<Table>` `hidden md:block`, daftar
+  kartu ringkas `md:hidden`. Berlaku di `/transaksi`, `/finance` (Riwayat Mutasi),
+  `/dashboard` (Transaksi Terakhir), `/scheduled` (Daftar Tagihan), `/kamar/kos`
+  (Split Bill). `/kamar/kos/kebutuhan`: toggle tabel/grid disembunyikan di mobile
+  (selalu kartu, helper `reqCard`).
+- **`full-calendar.tsx`**: grid bulan/minggu `hidden md:block`; di mobile tampil
+  **daftar agenda** (transaksi dikelompokkan per tanggal, terbaru dulu, bisa
+  di-scroll). Kontrol grid (search/prev-next/view) `hidden md:flex`.
+- Dialog per-baris `<AlertDialog>` hapus → satu `AlertDialog` terkontrol per
+  halaman (`confirmDelete` state) + helper cluster aksi dipakai tabel & kartu.
+- Kartu metrik: sudah 2-kolom + `p-3.5`/`text-lg` di mobile sejak Ronde 6.
+- Grid pasangan input dialog: `grid grid-cols-1 sm:grid-cols-2 gap-3`.
+- Header `/finance` & `/kamar/kos/anggota`: `flex-wrap` + label tombol/breadcrumb
+  disingkat di mobile (`hidden sm:inline`).
+
 ## Yang TIDAK perlu dikerjakan otomatis
 
 - Migrasi data dari Bizmo ke MSU — menunggu tindakan manusia (pemilik Bizmo invite member, atau ekspor file manual).

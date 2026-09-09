@@ -214,7 +214,7 @@ export default function DashboardPage() {
           <div className="lg:col-span-8 space-y-6">
             {/* Recent Personal Transactions */}
             <Card className="border border-border shadow-none p-5 gap-4 bg-card">
-              <CardHeader className="p-0 flex flex-row items-center justify-between">
+              <CardHeader className="p-0 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <CardTitle className="text-base font-semibold flex items-center gap-2">
                     <ArrowLeftRight className="size-5 text-primary" />
@@ -231,67 +231,88 @@ export default function DashboardPage() {
                 </Button>
               </CardHeader>
 
-              <CardContent className="p-0 -mx-5">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Keterangan</TableHead>
-                      <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Kategori</TableHead>
-                      <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Sumber Dana</TableHead>
-                      <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Tanggal</TableHead>
-                      <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground text-right">Nominal</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {transactions.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={5} className="text-center py-8 text-xs text-muted-foreground">
-                          <div className="flex flex-col items-center gap-1.5 justify-center">
-                            <Inbox className="size-6 text-muted-foreground/60" />
-                            <span>Belum ada transaksi.</span>
-                            <Button asChild size="sm" variant="outline" className="text-xs h-7 mt-1 border-border shadow-none">
-                              <Link href="/transaksi">+ Catat Transaksi Pertama</Link>
-                            </Button>
+              <CardContent className="p-0">
+                {transactions.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center gap-1.5 py-10 text-center text-xs text-muted-foreground">
+                    <Inbox className="size-6 text-muted-foreground/60" />
+                    <span>Belum ada transaksi.</span>
+                    <Button asChild size="sm" variant="outline" className="mt-1 h-7 border-border text-xs shadow-none">
+                      <Link href="/transaksi">+ Catat Transaksi Pertama</Link>
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    {/* Mobile: daftar ringkas */}
+                    <div className="space-y-2 md:hidden">
+                      {transactions.slice(0, 4).map((tx) => (
+                        <div
+                          key={tx.id}
+                          className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card p-3"
+                        >
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-semibold">{tx.title}</div>
+                            <div className="mt-0.5 text-[11px] text-muted-foreground">
+                              {tx.category} · {tx.account} · {tx.formattedDate}
+                            </div>
                           </div>
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      transactions.slice(0, 4).map((tx) => (
-                        <TableRow key={tx.id}>
-                          <TableCell className="px-5 py-3.5 font-semibold text-sm">
-                            {tx.title}
-                          </TableCell>
-                          <TableCell className="px-5 py-3.5">
-                            <Badge variant="outline" className="text-xs font-normal border-border">
-                              {tx.category}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="px-5 py-3.5 text-xs text-muted-foreground font-medium">
-                            {tx.account}
-                          </TableCell>
-                          <TableCell className="px-5 py-3.5 text-xs text-muted-foreground">
-                            {tx.formattedDate}
-                          </TableCell>
-                          <TableCell
-                            className={`px-5 py-3.5 text-right font-bold text-sm ${
-                              tx.type === "in"
-                                ? "text-emerald-600 dark:text-emerald-400"
-                                : "text-foreground"
+                          <div
+                            className={`shrink-0 text-sm font-bold ${
+                              tx.type === "in" ? "text-emerald-600 dark:text-emerald-400" : "text-foreground"
                             }`}
                           >
-                            {tx.type === "in" ? "+" : "-"}{fmt(tx.amount)}
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
+                            {tx.type === "in" ? "+" : "-"}
+                            {fmt(tx.amount)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Desktop: tabel */}
+                    <div className="-mx-5 hidden md:block">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Keterangan</TableHead>
+                            <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Kategori</TableHead>
+                            <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Sumber Dana</TableHead>
+                            <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Tanggal</TableHead>
+                            <TableHead className="px-5 py-3 text-right text-xs font-semibold text-muted-foreground">Nominal</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {transactions.slice(0, 4).map((tx) => (
+                            <TableRow key={tx.id}>
+                              <TableCell className="px-5 py-3.5 text-sm font-semibold">{tx.title}</TableCell>
+                              <TableCell className="px-5 py-3.5">
+                                <Badge variant="outline" className="border-border text-xs font-normal">
+                                  {tx.category}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="px-5 py-3.5 text-xs font-medium text-muted-foreground">
+                                {tx.account}
+                              </TableCell>
+                              <TableCell className="px-5 py-3.5 text-xs text-muted-foreground">{tx.formattedDate}</TableCell>
+                              <TableCell
+                                className={`px-5 py-3.5 text-right text-sm font-bold ${
+                                  tx.type === "in" ? "text-emerald-600 dark:text-emerald-400" : "text-foreground"
+                                }`}
+                              >
+                                {tx.type === "in" ? "+" : "-"}
+                                {fmt(tx.amount)}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </>
+                )}
               </CardContent>
             </Card>
 
             {/* Kamar Kos Bareng Overview Strip */}
             <Card className="border border-border shadow-none p-5 gap-4 bg-card">
-              <CardHeader className="p-0 flex flex-row items-center justify-between">
+              <CardHeader className="p-0 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <div className="flex items-center gap-2">
                     <CardTitle className="text-base font-semibold">Kamar Kos Bersama</CardTitle>
@@ -344,7 +365,7 @@ export default function DashboardPage() {
           <div className="lg:col-span-4 space-y-6">
             {/* Sumber Dana / Accounts Card */}
             <Card className="border border-border shadow-none p-5 gap-4 bg-card">
-              <CardHeader className="p-0 flex flex-row items-center justify-between">
+              <CardHeader className="p-0 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <CardTitle className="text-base font-semibold flex items-center gap-2">
                   <CreditCard className="size-5 text-primary" />
                   Sumber Dana / Dompet
@@ -385,7 +406,7 @@ export default function DashboardPage() {
 
             {/* Target Impian / Saving Goals Card */}
             <Card className="border border-border shadow-none p-5 gap-4 bg-card">
-              <CardHeader className="p-0 flex flex-row items-center justify-between">
+              <CardHeader className="p-0 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <CardTitle className="text-base font-semibold flex items-center gap-2">
                   <PiggyBank className="size-5 text-primary" />
                   Target Impian (Nabung)
@@ -428,7 +449,7 @@ export default function DashboardPage() {
 
             {/* Konversi Ringgit ⇄ Rupiah (arah menyesuaikan mata uang aktif) */}
             <Card className="border border-border shadow-none p-5 gap-4 bg-card">
-              <CardHeader className="p-0 flex flex-row items-center justify-between">
+              <CardHeader className="p-0 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <CardTitle className="text-base font-semibold flex items-center gap-2">
                   <Globe className="size-5 text-primary" />
                   {currency === "MYR" ? "Konversi Rupiah → Ringgit" : "Konversi Ringgit → Rupiah"}

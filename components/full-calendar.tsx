@@ -284,6 +284,8 @@ export function FullCalendar({
 
         {/* Right Section Controls */}
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Kontrol grid — hanya desktop (mobile pakai daftar agenda) */}
+          <div className="hidden items-center gap-2 md:flex">
           {/* Search Button */}
           <button className="p-2 rounded-lg bg-muted/60 hover:bg-muted border border-border text-muted-foreground hover:text-foreground transition-colors">
             <Search className="size-4" />
@@ -338,6 +340,7 @@ export function FullCalendar({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          </div>
 
           {/* Add Event Button */}
           {onAddTransaction && (
@@ -353,8 +356,94 @@ export function FullCalendar({
       </div>
 
       {/* ------------------------------------------------------------- */}
-      {/* MODE 1: MONTH VIEW */}
+      {/* MOBILE: AGENDA LIST (grid kalender terlalu sempit di HP) */}
       {/* ------------------------------------------------------------- */}
+      <div className="md:hidden">
+        {(() => {
+          const byDate = new Map<string, CalendarTransaction[]>()
+          for (const tx of transactions) {
+            if (!byDate.has(tx.date)) byDate.set(tx.date, [])
+            byDate.get(tx.date)!.push(tx)
+          }
+          const dates = Array.from(byDate.keys()).sort((a, b) => (a < b ? 1 : -1))
+          if (dates.length === 0) {
+            return (
+              <div className="px-4 py-10 text-center text-xs text-muted-foreground">
+                Belum ada transaksi untuk ditampilkan di kalender.
+              </div>
+            )
+          }
+          return (
+            <div className="max-h-[460px] divide-y divide-border overflow-y-auto">
+              {dates.map((d) => {
+                const parts = d.split("-")
+                const dateObj = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]))
+                const label = dateObj.toLocaleDateString("id-ID", {
+                  weekday: "short",
+                  day: "numeric",
+                  month: "short",
+                  year: dateObj.getFullYear() === todayObj.getFullYear() ? undefined : "numeric",
+                })
+                const rows = byDate.get(d)!
+                return (
+                  <div key={d} className="px-4 py-3">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDayDate(dateObj)}
+                      className={`mb-2 text-xs font-bold ${d === todayStr ? "text-purple-600 dark:text-purple-400" : "text-muted-foreground"}`}
+                    >
+                      {d === todayStr ? "Hari ini · " : ""}
+                      {label}
+                    </button>
+                    <div className="space-y-1.5">
+                      {rows.map((tx) => (
+                        <div
+                          key={tx.id}
+                          onClick={() => setSelectedDayDate(dateObj)}
+                          className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-border bg-card p-2.5"
+                        >
+                          <div className="flex min-w-0 items-center gap-2.5">
+                            <div
+                              className={`rounded-lg p-1.5 ${
+                                tx.type === "in"
+                                  ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                                  : "bg-rose-500/15 text-rose-600 dark:text-rose-400"
+                              }`}
+                            >
+                              {tx.type === "in" ? (
+                                <ArrowUpRight className="size-3.5" />
+                              ) : (
+                                <ArrowDownRight className="size-3.5" />
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="truncate text-xs font-semibold text-foreground">{tx.title}</div>
+                              <div className="truncate text-[11px] text-muted-foreground">{tx.category}</div>
+                            </div>
+                          </div>
+                          <div
+                            className={`shrink-0 text-xs font-bold ${
+                              tx.type === "in" ? "text-emerald-600 dark:text-emerald-400" : "text-foreground"
+                            }`}
+                          >
+                            {tx.type === "in" ? "+" : "-"}
+                            {fmt(tx.amount)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )
+        })()}
+      </div>
+
+      {/* ------------------------------------------------------------- */}
+      {/* MODE 1: MONTH VIEW (desktop) */}
+      {/* ------------------------------------------------------------- */}
+      <div className="hidden md:block">
       {viewMode === "month" && (
         <>
           {/* Weekday Header Row */}
@@ -539,6 +628,7 @@ export function FullCalendar({
           </div>
         </div>
       )}
+      </div>
 
       {/* 4. DAY DETAILS DIALOG */}
       <Dialog

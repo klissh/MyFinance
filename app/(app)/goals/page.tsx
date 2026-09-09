@@ -475,7 +475,7 @@ export default function GoalsPage() {
                       />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="space-y-1">
                         <label className="text-xs font-semibold text-muted-foreground">Kategori Target</label>
                         <Select value={newCategory} onValueChange={setNewCategory}>
@@ -515,7 +515,7 @@ export default function GoalsPage() {
                       />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="space-y-1">
                         <label className="text-xs font-semibold text-muted-foreground">Setoran Awal (Opsional)</label>
                         <Input
@@ -766,7 +766,7 @@ export default function GoalsPage() {
               <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} required />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <label className="text-xs font-semibold text-muted-foreground">Kategori Target</label>
                 <Select value={editCategory} onValueChange={setEditCategory}>

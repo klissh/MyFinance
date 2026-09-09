@@ -63,7 +63,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { Spinner } from "@/components/ui/spinner"
 import {
@@ -169,6 +168,7 @@ export default function KebutuhanBulananKosPage() {
   const [editResponsible, setEditResponsible] = useState("")
   const [isEditing, setIsEditing] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<KosRoutineRequirement | null>(null)
 
   const openEdit = (r: KosRoutineRequirement) => {
     setEditReq(r)
@@ -204,11 +204,98 @@ export default function KebutuhanBulananKosPage() {
 
   const handleDeleteRequirement = async (r: KosRoutineRequirement) => {
     setDeletingId(r.id)
+    setConfirmDelete(null)
     await kamarService.deleteRequirement(r.id)
     await reloadRequirements()
     setDeletingId(null)
     showNotification(`Kebutuhan "${r.title}" dihapus.`)
   }
+
+  // Kartu kebutuhan — dipakai grid desktop & daftar mobile.
+  const reqCard = (r: KosRoutineRequirement) => (
+    <Card
+      key={r.id}
+      className="flex flex-col justify-between gap-2.5 border border-border bg-card p-3.5 shadow-none"
+    >
+      <CardHeader className="flex flex-row items-start justify-between space-y-0 p-0">
+        <div className="min-w-0 space-y-0.5">
+          <Badge variant="outline" className="border-border px-1.5 py-0 text-[10px] font-normal">
+            {r.category}
+          </Badge>
+          <CardTitle className="truncate text-sm font-bold">{r.title}</CardTitle>
+          <CardDescription className="text-[11px]">
+            Tempo: {r.dueDate} • PJ: <strong>{r.responsiblePerson.split(" ")[0]}</strong>
+          </CardDescription>
+        </div>
+        {r.isPaidByMe ? (
+          <Badge className="shrink-0 border-none bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600 shadow-none dark:text-emerald-400">
+            Lunas
+          </Badge>
+        ) : (
+          <Badge className="shrink-0 border-none bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600 shadow-none dark:text-amber-400">
+            Belum Bayar
+          </Badge>
+        )}
+      </CardHeader>
+
+      <CardContent className="space-y-2 p-0">
+        <div className="space-y-1 rounded-lg border border-border bg-muted/40 p-2 text-[11px]">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span>Total Tagihan:</span>
+            <span className="font-semibold text-foreground">{fmt(r.totalPrice)}</span>
+          </div>
+          <div className="flex items-center justify-between border-t border-border/50 pt-0.5 font-bold">
+            <span>Beban Saya ({r.splitPeopleCount} Pghn):</span>
+            <span className="text-emerald-600 dark:text-emerald-400">{fmt(r.perPersonPrice)}</span>
+          </div>
+        </div>
+      </CardContent>
+
+      <CardFooter className="flex items-center gap-1.5 border-t border-border p-0 pt-2">
+        {r.isPaidByMe ? (
+          <Button variant="outline" size="sm" className="h-7 flex-1 border-border text-xs shadow-none" disabled>
+            <CheckCircle2 className="mr-1 size-3 text-emerald-600" /> Terpotong di Log
+          </Button>
+        ) : (
+          <Button
+            size="sm"
+            className="h-7 flex-1 text-xs shadow-none"
+            disabled={payingId === r.id}
+            onClick={() => handlePayMyShare(r.id)}
+          >
+            {payingId === r.id ? (
+              <span className="flex items-center gap-1">
+                <Spinner className="size-3" /> Memproses...
+              </span>
+            ) : (
+              <>
+                Bayar Bagian Saya <ArrowRight className="ml-1 size-3" />
+              </>
+            )}
+          </Button>
+        )}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-7 shrink-0 border border-border text-muted-foreground hover:text-foreground"
+          onClick={() => openEdit(r)}
+          title="Ubah kebutuhan"
+        >
+          <Pencil className="size-3" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-7 shrink-0 border border-border text-muted-foreground hover:text-rose-600"
+          disabled={deletingId === r.id}
+          onClick={() => setConfirmDelete(r)}
+          title="Hapus kebutuhan"
+        >
+          <Trash2 className="size-3" />
+        </Button>
+      </CardFooter>
+    </Card>
+  )
 
   const handleAddRequirement = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -317,7 +404,7 @@ export default function KebutuhanBulananKosPage() {
         )}
 
         {/* 1. Summary Metric Cards */}
-        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
           <Card className="shadow-none border border-border p-3.5 gap-2 bg-card sm:p-5 sm:gap-3">
             <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
               <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
@@ -402,8 +489,8 @@ export default function KebutuhanBulananKosPage() {
             </div>
 
             <div className="flex items-center gap-2">
-              {/* View Toggle Buttons */}
-              <div className="flex items-center p-1 rounded-lg bg-muted/60 border border-border">
+              {/* View Toggle Buttons — hanya di desktop (mobile selalu kartu) */}
+              <div className="hidden items-center p-1 rounded-lg bg-muted/60 border border-border md:flex">
                 <button
                   type="button"
                   onClick={() => setViewMode("table")}
@@ -457,7 +544,7 @@ export default function KebutuhanBulananKosPage() {
                       />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="space-y-1">
                         <label className="text-xs font-semibold text-muted-foreground">Total Harga ({symbol})</label>
                         <Input
@@ -486,7 +573,7 @@ export default function KebutuhanBulananKosPage() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="space-y-1">
                         <label className="text-xs font-semibold text-muted-foreground">Dibagi Berapa Orang?</label>
                         <Select value={newSplitCount} onValueChange={setNewSplitCount}>
@@ -594,14 +681,23 @@ export default function KebutuhanBulananKosPage() {
             </Select>
           </div>
 
-          {/* VIEW MODE: TABLE VIEW (Default & Highly Recommended) */}
+          {/* Mobile: selalu tampilan kartu */}
+          <div className="space-y-3 md:hidden">
+            {paginatedRequirements.length === 0 ? (
+              <div className="py-10 text-center text-xs text-muted-foreground">
+                Tidak ada kebutuhan bulanan yang sesuai.
+              </div>
+            ) : (
+              paginatedRequirements.map(reqCard)
+            )}
+          </div>
+
+          {/* Desktop: tabel / grid sesuai toggle */}
+          <div className="hidden md:block">
           {viewMode === "table" ? (
             <CardContent className="p-0 overflow-hidden">
-              <p className="pb-2 text-[11px] text-muted-foreground sm:hidden">
-                Geser tabel ke samping untuk lihat semua kolom →
-              </p>
               <div className="w-full overflow-x-auto">
-                <Table className="w-full min-w-[700px]">
+                <Table className="w-full min-w-[720px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead className="px-3.5 py-3 text-xs font-semibold text-muted-foreground">Kebutuhan & Kategori</TableHead>
@@ -690,40 +786,16 @@ export default function KebutuhanBulananKosPage() {
                               >
                                 <Pencil className="size-3.5" />
                               </Button>
-                              <AlertDialog>
-                                <AlertDialogTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="size-7 text-muted-foreground hover:text-rose-600"
-                                    disabled={deletingId === r.id}
-                                    title="Hapus kebutuhan"
-                                  >
-                                    <Trash2 className="size-3.5" />
-                                  </Button>
-                                </AlertDialogTrigger>
-                                <AlertDialogContent>
-                                  <AlertDialogHeader>
-                                    <AlertDialogTitle className="text-rose-600 dark:text-rose-400">
-                                      Hapus kebutuhan &quot;{r.title}&quot;?
-                                    </AlertDialogTitle>
-                                    <AlertDialogDescription className="text-xs leading-relaxed">
-                                      Kebutuhan ini & catatan pembayaran anggota untuknya dihapus
-                                      untuk semua penghuni. Transaksi &quot;Iuran Bulanan Kos&quot;
-                                      yang sudah tercatat di log pribadi tetap ada.
-                                    </AlertDialogDescription>
-                                  </AlertDialogHeader>
-                                  <AlertDialogFooter>
-                                    <AlertDialogCancel className="text-xs">Batal</AlertDialogCancel>
-                                    <AlertDialogAction
-                                      className="text-xs bg-rose-600 hover:bg-rose-700 text-white"
-                                      onClick={() => handleDeleteRequirement(r)}
-                                    >
-                                      Ya, Hapus
-                                    </AlertDialogAction>
-                                  </AlertDialogFooter>
-                                </AlertDialogContent>
-                              </AlertDialog>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="size-7 text-muted-foreground hover:text-rose-600"
+                                disabled={deletingId === r.id}
+                                onClick={() => setConfirmDelete(r)}
+                                title="Hapus kebutuhan"
+                              >
+                                <Trash2 className="size-3.5" />
+                              </Button>
                             </div>
                           </TableCell>
                         </TableRow>
@@ -734,109 +806,11 @@ export default function KebutuhanBulananKosPage() {
               </div>
             </CardContent>
           ) : (
-            /* VIEW MODE: GRID CARDS VIEW */
             <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {paginatedRequirements.map((r) => (
-                <Card key={r.id} className="border border-border shadow-none p-3.5 flex flex-col justify-between gap-2.5 bg-card">
-                  <CardHeader className="p-0 flex flex-row items-start justify-between space-y-0">
-                    <div className="space-y-0.5">
-                      <Badge variant="outline" className="text-[10px] font-normal py-0 px-1.5 border-border">
-                        {r.category}
-                      </Badge>
-                      <CardTitle className="text-sm font-bold truncate max-w-[150px]">{r.title}</CardTitle>
-                      <CardDescription className="text-[11px]">
-                        Tempo: {r.dueDate} • PJ: <strong>{r.responsiblePerson.split(" ")[0]}</strong>
-                      </CardDescription>
-                    </div>
-
-                    {r.isPaidByMe ? (
-                      <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-none shadow-none text-[10px] font-semibold px-1.5 py-0.5 shrink-0">
-                        Lunas
-                      </Badge>
-                    ) : (
-                      <Badge className="bg-amber-500/15 text-amber-600 dark:text-amber-400 border-none shadow-none text-[10px] font-semibold px-1.5 py-0.5 shrink-0">
-                        Belum Bayar
-                      </Badge>
-                    )}
-                  </CardHeader>
-
-                  <CardContent className="p-0 space-y-2">
-                    <div className="p-2 rounded-lg bg-muted/40 border border-border text-[11px] space-y-1">
-                      <div className="flex items-center justify-between text-muted-foreground">
-                        <span>Total Tagihan:</span>
-                        <span className="font-semibold text-foreground">{fmt(r.totalPrice)}</span>
-                      </div>
-                      <div className="flex items-center justify-between font-bold pt-0.5 border-t border-border/50">
-                        <span>Beban Saya ({r.splitPeopleCount} Pghn):</span>
-                        <span className="text-emerald-600 dark:text-emerald-400">
-                          {fmt(r.perPersonPrice)}
-                        </span>
-                      </div>
-                    </div>
-                  </CardContent>
-
-                  <CardFooter className="p-0 pt-2 border-t border-border flex items-center gap-1.5">
-                    {r.isPaidByMe ? (
-                      <Button variant="outline" size="sm" className="flex-1 text-xs shadow-none border-border h-7" disabled>
-                        <CheckCircle2 className="size-3 mr-1 text-emerald-600" /> Terpotong di Log
-                      </Button>
-                    ) : (
-                      <Button
-                        size="sm"
-                        className="flex-1 text-xs shadow-none h-7"
-                        onClick={() => handlePayMyShare(r.id)}
-                      >
-                        Bayar Bagian Saya <ArrowRight className="size-3 ml-1" />
-                      </Button>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-7 shrink-0 text-muted-foreground hover:text-foreground border border-border"
-                      onClick={() => openEdit(r)}
-                      title="Ubah kebutuhan"
-                    >
-                      <Pencil className="size-3" />
-                    </Button>
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="size-7 shrink-0 text-muted-foreground hover:text-rose-600 border border-border"
-                          disabled={deletingId === r.id}
-                          title="Hapus kebutuhan"
-                        >
-                          <Trash2 className="size-3" />
-                        </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle className="text-rose-600 dark:text-rose-400">
-                            Hapus kebutuhan &quot;{r.title}&quot;?
-                          </AlertDialogTitle>
-                          <AlertDialogDescription className="text-xs leading-relaxed">
-                            Kebutuhan ini & catatan pembayaran anggota untuknya dihapus untuk
-                            semua penghuni. Transaksi &quot;Iuran Bulanan Kos&quot; yang sudah
-                            tercatat di log pribadi tetap ada.
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel className="text-xs">Batal</AlertDialogCancel>
-                          <AlertDialogAction
-                            className="text-xs bg-rose-600 hover:bg-rose-700 text-white"
-                            onClick={() => handleDeleteRequirement(r)}
-                          >
-                            Ya, Hapus
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  </CardFooter>
-                </Card>
-              ))}
+              {paginatedRequirements.map(reqCard)}
             </div>
           )}
+          </div>
 
           {/* Pagination Controls for Requirements */}
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-xs pt-2 border-t border-border">
@@ -920,7 +894,7 @@ export default function KebutuhanBulananKosPage() {
               <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} required />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <label className="text-xs font-semibold text-muted-foreground">Total Harga ({symbol})</label>
                 <Input
@@ -952,7 +926,7 @@ export default function KebutuhanBulananKosPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <label className="text-xs font-semibold text-muted-foreground">Dibagi Berapa Orang?</label>
                 <Select value={editSplitCount} onValueChange={setEditSplitCount}>
@@ -1027,6 +1001,31 @@ export default function KebutuhanBulananKosPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Konfirmasi Hapus Kebutuhan */}
+      <AlertDialog open={!!confirmDelete} onOpenChange={(open) => !open && setConfirmDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-rose-600 dark:text-rose-400">
+              Hapus kebutuhan &quot;{confirmDelete?.title}&quot;?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-xs leading-relaxed">
+              Kebutuhan ini &amp; catatan pembayaran anggota untuknya dihapus untuk semua
+              penghuni. Transaksi &quot;Iuran Bulanan Kos&quot; yang sudah tercatat di log
+              pribadi tetap ada.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="text-xs">Batal</AlertDialogCancel>
+            <AlertDialogAction
+              className="text-xs bg-rose-600 hover:bg-rose-700 text-white"
+              onClick={() => confirmDelete && handleDeleteRequirement(confirmDelete)}
+            >
+              Ya, Hapus
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

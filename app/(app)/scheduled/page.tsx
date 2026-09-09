@@ -60,6 +60,7 @@ import {
 } from "@/components/ui/popover"
 import { Calendar } from "@/components/ui/calendar"
 import { FullCalendar, CalendarTransaction } from "@/components/full-calendar"
+import { ListCard, ListCardHead, ListCardMeta } from "@/components/ui/list-card"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -69,7 +70,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { Spinner } from "@/components/ui/spinner"
 import {
@@ -213,6 +213,7 @@ export default function ScheduledPage() {
   const [editNotes, setEditNotes] = useState("")
   const [isEditing, setIsEditing] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<ScheduledBillRecord | null>(null)
 
   const openEdit = (b: ScheduledBillRecord) => {
     setEditBill(b)
@@ -249,12 +250,62 @@ export default function ScheduledPage() {
 
   const handleDeleteBill = async (b: ScheduledBillRecord) => {
     setDeletingId(b.id)
+    setConfirmDelete(null)
     await scheduledService.remove(b.id)
     await refreshBills()
     setCalendarTransactions((prev) => prev.filter((t) => t.id !== b.id))
     setDeletingId(null)
     showNotification(`Jadwal "${b.title}" dihapus.`)
   }
+
+  // Aksi bayar + kelola, dipakai tabel desktop & kartu mobile.
+  const billPayAction = (b: ScheduledBillRecord) =>
+    b.status === "paid" ? (
+      <Badge className="border-none bg-emerald-500/15 text-xs font-semibold text-emerald-600 shadow-none dark:text-emerald-400">
+        <CheckCircle2 className="mr-1 size-3.5" /> Lunas
+      </Badge>
+    ) : (
+      <Button
+        size="sm"
+        className="h-8 shadow-none text-xs"
+        disabled={payingId === b.id}
+        onClick={() => handlePayBill(b.id)}
+      >
+        {payingId === b.id ? (
+          <span className="flex items-center gap-1">
+            <Spinner className="size-3" /> Memproses...
+          </span>
+        ) : (
+          <>
+            Bayar Sekarang <ArrowRight className="ml-1 size-3.5" />
+          </>
+        )}
+      </Button>
+    )
+
+  const billManageAction = (b: ScheduledBillRecord) => (
+    <div className="flex items-center gap-1">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="size-7 text-muted-foreground hover:text-foreground"
+        onClick={() => openEdit(b)}
+        title="Ubah jadwal"
+      >
+        <Pencil className="size-3.5" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="size-7 text-muted-foreground hover:text-rose-600"
+        disabled={deletingId === b.id}
+        onClick={() => setConfirmDelete(b)}
+        title="Hapus jadwal"
+      >
+        <Trash2 className="size-3.5" />
+      </Button>
+    </div>
+  )
 
   const pendingBills = scheduledBills.filter((b) => b.status === "pending")
   const totalPendingAmount = pendingBills.reduce((sum, b) => sum + b.amount, 0)
@@ -306,7 +357,7 @@ export default function ScheduledPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-foreground">Jumlah Tagihan ({symbol})</label>
                   <Input
@@ -337,7 +388,7 @@ export default function ScheduledPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-foreground">Sumber Dana Default</label>
                   <Select value={newAccount} onValueChange={setNewAccount}>
@@ -427,7 +478,7 @@ export default function ScheduledPage() {
         )}
 
         {/* 1. Summary Metric Strip */}
-        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
           <Card className="shadow-none border border-border p-3.5 gap-2 bg-card sm:p-5 sm:gap-3">
             <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
               <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
@@ -538,130 +589,89 @@ export default function ScheduledPage() {
             </div>
           </CardHeader>
 
-          <CardContent className="p-0 -mx-5">
-            <p className="px-5 pb-2 text-[11px] text-muted-foreground sm:hidden">
-              Geser tabel ke samping untuk lihat semua kolom →
-            </p>
-            <div className="w-full overflow-x-auto">
-            <Table className="min-w-[720px]">
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Tanggal Tempo</TableHead>
-                  <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Nama Tagihan</TableHead>
-                  <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Kategori</TableHead>
-                  <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Sumber Dana</TableHead>
-                  <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Jumlah Tagihan</TableHead>
-                  <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground text-center">Aksi Pembayaran</TableHead>
-                  <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground text-right">Kelola</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {scheduledBills.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={7} className="h-32 text-center text-muted-foreground text-xs">
-                      Belum ada jadwal tagihan atau pembayaran rutin yang dicatat.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  scheduledBills.map((b) => (
-                    <TableRow key={b.id}>
-                      <TableCell className="px-5 py-3.5 text-xs text-muted-foreground font-medium">
-                        {b.formattedDate}
-                      </TableCell>
-                      <TableCell className="px-5 py-3.5 font-semibold text-sm">
-                        <div>{b.title}</div>
-                        {b.notes && <div className="text-xs text-muted-foreground font-normal">{b.notes}</div>}
-                      </TableCell>
-                      <TableCell className="px-5 py-3.5">
-                        <Badge variant="outline" className="text-xs font-normal border-border">
+          <CardContent className="p-0">
+            {scheduledBills.length === 0 ? (
+              <div className="py-10 text-center text-xs text-muted-foreground">
+                Belum ada jadwal tagihan atau pembayaran rutin yang dicatat.
+              </div>
+            ) : (
+              <>
+                {/* Mobile: daftar kartu */}
+                <div className="space-y-2.5 md:hidden">
+                  {scheduledBills.map((b) => (
+                    <ListCard key={b.id}>
+                      <ListCardHead>
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold">{b.title}</div>
+                          {b.notes && (
+                            <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{b.notes}</div>
+                          )}
+                        </div>
+                        <div className="shrink-0 text-sm font-bold text-rose-600 dark:text-rose-400">
+                          -{fmt(b.amount)}
+                        </div>
+                      </ListCardHead>
+                      <ListCardMeta>
+                        <span>{b.formattedDate}</span>
+                        <span aria-hidden>·</span>
+                        <Badge variant="outline" className="border-border px-1.5 py-0 text-[10px] font-normal">
                           {b.category}
                         </Badge>
-                      </TableCell>
-                      <TableCell className="px-5 py-3.5 text-sm text-muted-foreground">
-                        {b.account}
-                      </TableCell>
-                      <TableCell className="px-5 py-3.5 font-bold text-sm text-rose-600 dark:text-rose-400">
-                        -{fmt(b.amount)}
-                      </TableCell>
-                      <TableCell className="px-5 py-3.5 text-center">
-                        {b.status === "paid" ? (
-                          <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-none shadow-none text-xs font-semibold">
-                            <CheckCircle2 className="size-3.5 mr-1" /> Lunas
-                          </Badge>
-                        ) : (
-                          <Button
-                            size="sm"
-                            className="shadow-none text-xs"
-                            disabled={payingId === b.id}
-                            onClick={() => handlePayBill(b.id)}
-                          >
-                            {payingId === b.id ? (
-                              <div className="flex items-center gap-1">
-                                <Spinner className="size-3" />
-                                <span>Memproses...</span>
-                              </div>
-                            ) : (
-                              <>
-                                Bayar Sekarang <ArrowRight className="size-3.5 ml-1" />
-                              </>
-                            )}
-                          </Button>
-                        )}
-                      </TableCell>
-                      <TableCell className="px-5 py-3.5 text-right whitespace-nowrap">
-                        <div className="flex items-center justify-end gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="size-7 text-muted-foreground hover:text-foreground"
-                            onClick={() => openEdit(b)}
-                            title="Ubah jadwal"
-                          >
-                            <Pencil className="size-3.5" />
-                          </Button>
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="size-7 text-muted-foreground hover:text-rose-600"
-                                disabled={deletingId === b.id}
-                                title="Hapus jadwal"
-                              >
-                                <Trash2 className="size-3.5" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle className="text-rose-600 dark:text-rose-400">
-                                  Hapus jadwal &quot;{b.title}&quot;?
-                                </AlertDialogTitle>
-                                <AlertDialogDescription className="text-xs leading-relaxed">
-                                  Jadwal tagihan ini dihapus permanen.
-                                  {b.status === "paid" && (
-                                    <> Transaksi pembayaran yang sudah tercatat di log tetap ada.</>
-                                  )}
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel className="text-xs">Batal</AlertDialogCancel>
-                                <AlertDialogAction
-                                  className="text-xs bg-rose-600 hover:bg-rose-700 text-white"
-                                  onClick={() => handleDeleteBill(b)}
-                                >
-                                  Ya, Hapus
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-            </div>
+                        <span aria-hidden>·</span>
+                        <span>{b.account}</span>
+                      </ListCardMeta>
+                      <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-border/60 pt-2">
+                        {billPayAction(b)}
+                        {billManageAction(b)}
+                      </div>
+                    </ListCard>
+                  ))}
+                </div>
+
+                {/* Desktop: tabel */}
+                <div className="-mx-5 hidden md:block">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Tanggal Tempo</TableHead>
+                        <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Nama Tagihan</TableHead>
+                        <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Kategori</TableHead>
+                        <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Sumber Dana</TableHead>
+                        <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Jumlah Tagihan</TableHead>
+                        <TableHead className="px-5 py-3 text-center text-xs font-semibold text-muted-foreground">Aksi Pembayaran</TableHead>
+                        <TableHead className="px-5 py-3 text-right text-xs font-semibold text-muted-foreground">Kelola</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {scheduledBills.map((b) => (
+                        <TableRow key={b.id}>
+                          <TableCell className="px-5 py-3.5 text-xs font-medium text-muted-foreground">
+                            {b.formattedDate}
+                          </TableCell>
+                          <TableCell className="px-5 py-3.5 text-sm font-semibold">
+                            <div>{b.title}</div>
+                            {b.notes && <div className="text-xs font-normal text-muted-foreground">{b.notes}</div>}
+                          </TableCell>
+                          <TableCell className="px-5 py-3.5">
+                            <Badge variant="outline" className="border-border text-xs font-normal">
+                              {b.category}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="px-5 py-3.5 text-sm text-muted-foreground">{b.account}</TableCell>
+                          <TableCell className="px-5 py-3.5 text-sm font-bold text-rose-600 dark:text-rose-400">
+                            -{fmt(b.amount)}
+                          </TableCell>
+                          <TableCell className="px-5 py-3.5 text-center">{billPayAction(b)}</TableCell>
+                          <TableCell className="px-5 py-3.5 text-right whitespace-nowrap">
+                            <div className="flex justify-end">{billManageAction(b)}</div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -691,7 +701,7 @@ export default function ScheduledPage() {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-foreground">Jumlah Tagihan ({symbol})</label>
                 <Input
@@ -725,7 +735,7 @@ export default function ScheduledPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-foreground">Sumber Dana Default</label>
                 <Select value={editAccount} onValueChange={setEditAccount}>
@@ -803,6 +813,32 @@ export default function ScheduledPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Konfirmasi Hapus Jadwal */}
+      <AlertDialog open={!!confirmDelete} onOpenChange={(open) => !open && setConfirmDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-rose-600 dark:text-rose-400">
+              Hapus jadwal &quot;{confirmDelete?.title}&quot;?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-xs leading-relaxed">
+              Jadwal tagihan ini dihapus permanen.
+              {confirmDelete?.status === "paid" && (
+                <> Transaksi pembayaran yang sudah tercatat di log tetap ada.</>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="text-xs">Batal</AlertDialogCancel>
+            <AlertDialogAction
+              className="text-xs bg-rose-600 hover:bg-rose-700 text-white"
+              onClick={() => confirmDelete && handleDeleteBill(confirmDelete)}
+            >
+              Ya, Hapus
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   )
 }

@@ -62,8 +62,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
+import { ListCard, ListCardHead, ListCardMeta } from "@/components/ui/list-card"
 import { Spinner } from "@/components/ui/spinner"
 import {
   Plus,
@@ -236,6 +236,7 @@ export default function TransaksiKosPage() {
   const [editPayerAccount, setEditPayerAccount] = useState("")
   const [isEditing, setIsEditing] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<SharedTransaction | null>(null)
 
   const iCreated = (tx: SharedTransaction) =>
     !!myUserId && (tx.createdByUserId === myUserId || (!tx.createdByUserId && tx.paidByUserId === myUserId))
@@ -291,6 +292,7 @@ export default function TransaksiKosPage() {
 
   const handleDeleteTransaction = async (tx: SharedTransaction) => {
     setDeletingId(tx.id)
+    setConfirmDelete(null)
     const { error } = await kamarService.deleteSharedTransaction(tx.id)
     await kamarService.reconcileRoomLedger(kamarService.getUserRoom()?.id)
     await reloadTransactions()
@@ -301,6 +303,78 @@ export default function TransaksiKosPage() {
         : `Split bill "${tx.title}" dihapus. Pencatatan bagian tiap anggota ikut dibatalkan.`,
     )
   }
+
+  // Kolom "Bagian Saya" + status, dipakai tabel & kartu mobile.
+  const shareCell = (tx: SharedTransaction) => (
+    <>
+      <span className="font-bold text-foreground">{fmt(tx.perPersonAmount)}</span>
+      {tx.myShare > 0 ? (
+        <span className="block text-[10px] text-rose-600 dark:text-rose-400">belum dibayar</span>
+      ) : tx.myShare < 0 ? (
+        <span className="block text-[10px] text-emerald-600 dark:text-emerald-400">
+          +{fmt(Math.abs(tx.myShare))} piutang
+        </span>
+      ) : (
+        <span className="block text-[10px] text-muted-foreground">lunas</span>
+      )}
+    </>
+  )
+
+  const settleAction = (tx: SharedTransaction) =>
+    tx.myShare > 0 ? (
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={settlingId === tx.id}
+        className="h-8 border-amber-500/40 px-2 text-xs font-semibold text-amber-600 shadow-none hover:bg-amber-500/10 dark:text-amber-400"
+        onClick={() => handleSettleBill(tx.id)}
+      >
+        {settlingId === tx.id ? (
+          <span className="flex items-center gap-1">
+            <Spinner className="size-3" /> Memproses...
+          </span>
+        ) : (
+          <>
+            Bayar Ke {tx.paidBy.split(" ")[0]} <ArrowRight className="ml-1 size-3" />
+          </>
+        )}
+      </Button>
+    ) : tx.myShare < 0 ? (
+      <Badge className="border-none bg-emerald-500/15 px-2 py-0.5 text-[11px] font-semibold text-emerald-600 shadow-none dark:text-emerald-400">
+        Piutang Saya
+      </Badge>
+    ) : (
+      <Badge variant="outline" className="border-border px-2 py-0 text-[11px] font-normal text-muted-foreground">
+        Lunas
+      </Badge>
+    )
+
+  const manageAction = (tx: SharedTransaction) =>
+    iCreated(tx) ? (
+      <div className="flex items-center gap-1">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-7 text-muted-foreground hover:text-foreground"
+          onClick={() => openEdit(tx)}
+          title="Ubah split bill"
+        >
+          <Pencil className="size-3.5" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-7 text-muted-foreground hover:text-rose-600"
+          disabled={deletingId === tx.id}
+          onClick={() => setConfirmDelete(tx)}
+          title="Hapus split bill"
+        >
+          <Trash2 className="size-3.5" />
+        </Button>
+      </div>
+    ) : (
+      <span className="text-[11px] text-muted-foreground">—</span>
+    )
 
   // Calculate Summary Metrics
   const totalMyOwed = transactions
@@ -376,7 +450,7 @@ export default function TransaksiKosPage() {
         )}
 
         {/* 1. Summary Metric Cards (Clean 3-Column Grid) */}
-        <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3">
           <Card className="shadow-none border border-border p-3.5 gap-2 bg-card sm:p-5 sm:gap-3">
             <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
               <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
@@ -474,7 +548,7 @@ export default function TransaksiKosPage() {
                     />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-1">
                       <label className="text-xs font-semibold text-muted-foreground">Total Nominal Tagihan ({symbol})</label>
                       <Input
@@ -659,161 +733,111 @@ export default function TransaksiKosPage() {
             </div>
           </div>
 
-          {/* Table */}
+          {/* Transaksi bersama — tabel di ≥md, kartu ringkas di mobile */}
           <CardContent className="p-0 overflow-hidden">
-            <p className="pb-2 text-[11px] text-muted-foreground sm:hidden">
-              Geser tabel ke samping untuk lihat semua kolom →
-            </p>
-            <div className="w-full overflow-x-auto">
-              <Table className="w-full min-w-[700px]">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="px-3.5 py-3 text-xs font-semibold text-muted-foreground whitespace-nowrap">Tanggal</TableHead>
-                    <TableHead className="px-3.5 py-3 text-xs font-semibold text-muted-foreground">Keterangan Transaksi</TableHead>
-                    <TableHead className="px-3.5 py-3 text-xs font-semibold text-muted-foreground whitespace-nowrap">Kategori</TableHead>
-                    <TableHead className="px-3.5 py-3 text-xs font-semibold text-muted-foreground whitespace-nowrap">Dibayar Oleh</TableHead>
-                    <TableHead className="px-3.5 py-3 text-xs font-semibold text-muted-foreground">Ditanggung Oleh</TableHead>
-                    <TableHead className="px-3.5 py-3 text-xs font-semibold text-muted-foreground whitespace-nowrap">Total Nominal</TableHead>
-                    <TableHead className="px-3.5 py-3 text-xs font-semibold text-muted-foreground text-right whitespace-nowrap">Bagian Saya</TableHead>
-                    <TableHead className="px-3.5 py-3 text-xs font-semibold text-muted-foreground text-right whitespace-nowrap">Aksi Pelunasan</TableHead>
-                    <TableHead className="px-3.5 py-3 text-xs font-semibold text-muted-foreground text-right whitespace-nowrap">Kelola</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {paginatedTransactions.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={9} className="text-center py-8 text-xs text-muted-foreground">
-                        Tidak ada transaksi kos yang sesuai dengan filter.
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    paginatedTransactions.map((tx) => (
-                      <TableRow key={tx.id}>
-                        <TableCell className="px-3.5 py-3 text-xs text-muted-foreground font-medium whitespace-nowrap">
-                          {tx.formattedDate}
-                        </TableCell>
-                        <TableCell className="px-3.5 py-3 font-semibold text-xs max-w-[200px] truncate">
-                          {tx.title}
-                        </TableCell>
-                        <TableCell className="px-3.5 py-3 whitespace-nowrap">
-                          <Badge variant="outline" className="text-[11px] font-normal border-border py-0 px-2">
+            {paginatedTransactions.length === 0 ? (
+              <div className="py-10 text-center text-xs text-muted-foreground">
+                Tidak ada transaksi kos yang sesuai dengan filter.
+              </div>
+            ) : (
+              <>
+                {/* Mobile: daftar kartu */}
+                <div className="space-y-2.5 md:hidden">
+                  {paginatedTransactions.map((tx) => {
+                    const allMembers =
+                      members.length > 0 && tx.splitBetween.length >= members.length
+                        ? `Semua anggota (${members.length})`
+                        : tx.splitBetween.join(", ")
+                    return (
+                      <ListCard key={tx.id}>
+                        <ListCardHead>
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-semibold">{tx.title}</div>
+                            <div className="mt-0.5 text-[11px] text-muted-foreground">
+                              Dibayar: <span className="font-medium text-foreground">{tx.paidBy}</span>
+                              {members.find((m) => m.isMe)?.name === tx.paidBy ? " (Saya)" : ""}
+                            </div>
+                          </div>
+                          <div className="shrink-0 text-right text-xs">{shareCell(tx)}</div>
+                        </ListCardHead>
+                        <ListCardMeta>
+                          <span>{tx.formattedDate}</span>
+                          <span aria-hidden>·</span>
+                          <Badge variant="outline" className="border-border px-1.5 py-0 text-[10px] font-normal">
                             {tx.category}
                           </Badge>
-                        </TableCell>
-                        <TableCell className="px-3.5 py-3 text-xs font-bold text-foreground whitespace-nowrap">
-                          {tx.paidBy}
-                          {members.find((m) => m.isMe)?.name === tx.paidBy ? " (Saya)" : ""}
-                        </TableCell>
-                        <TableCell className="px-3.5 py-3 text-xs text-muted-foreground max-w-[160px] truncate">
-                          {members.length > 0 && tx.splitBetween.length >= members.length
-                            ? `Semua Anggota (${members.length})`
-                            : tx.splitBetween.join(", ")}
-                        </TableCell>
-                        <TableCell className="px-3.5 py-3 font-bold text-xs text-foreground whitespace-nowrap">
-                          {fmt(tx.totalAmount)}
-                          <span className="block text-[10px] font-normal text-muted-foreground">
-                            ÷ {tx.splitBetween.length} orang
+                          <span aria-hidden>·</span>
+                          <span>
+                            {fmt(tx.totalAmount)} ÷ {tx.splitBetween.length}
                           </span>
-                        </TableCell>
-                        <TableCell className="px-3.5 py-3 text-right text-xs whitespace-nowrap">
-                          <span className="font-bold text-foreground">
-                            {fmt(tx.perPersonAmount)}
-                          </span>
-                          {tx.myShare > 0 ? (
-                            <span className="block text-[10px] text-rose-600 dark:text-rose-400">
-                              belum dibayar
-                            </span>
-                          ) : tx.myShare < 0 ? (
-                            <span className="block text-[10px] text-emerald-600 dark:text-emerald-400">
-                              +{fmt(Math.abs(tx.myShare))} piutang
-                            </span>
-                          ) : (
-                            <span className="block text-[10px] text-muted-foreground">lunas</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="px-3.5 py-3 text-right whitespace-nowrap">
-                          {tx.myShare > 0 ? (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={settlingId === tx.id}
-                              className="h-7 text-xs shadow-none border-amber-500/40 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 font-semibold px-2"
-                              onClick={() => handleSettleBill(tx.id)}
-                            >
-                              {settlingId === tx.id ? (
-                                <span className="flex items-center gap-1"><Spinner className="size-3" /> Memproses...</span>
-                              ) : (
-                                <>Bayar Ke {tx.paidBy.split(" ")[0]} <ArrowRight className="size-3 ml-1" /></>
-                              )}
-                            </Button>
-                          ) : tx.myShare < 0 ? (
-                            <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-none shadow-none text-[11px] font-semibold px-2 py-0.5">
-                              Piutang Saya
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline" className="text-[11px] font-normal border-border text-muted-foreground py-0 px-2">
-                              Lunas
-                            </Badge>
-                          )}
-                        </TableCell>
-                        <TableCell className="px-3.5 py-3 text-right whitespace-nowrap">
-                          {iCreated(tx) ? (
-                            <div className="flex items-center justify-end gap-1">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="size-7 text-muted-foreground hover:text-foreground"
-                                onClick={() => openEdit(tx)}
-                                title="Ubah split bill"
-                              >
-                                <Pencil className="size-3.5" />
-                              </Button>
-                              <AlertDialog>
-                                <AlertDialogTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="size-7 text-muted-foreground hover:text-rose-600"
-                                    disabled={deletingId === tx.id}
-                                    title="Hapus split bill"
-                                  >
-                                    <Trash2 className="size-3.5" />
-                                  </Button>
-                                </AlertDialogTrigger>
-                                <AlertDialogContent>
-                                  <AlertDialogHeader>
-                                    <AlertDialogTitle className="text-rose-600 dark:text-rose-400">
-                                      Hapus split bill &quot;{tx.title}&quot;?
-                                    </AlertDialogTitle>
-                                    <AlertDialogDescription className="text-xs leading-relaxed">
-                                      Transaksi bersama ini dihapus untuk semua penghuni. Pencatatan
-                                      pengeluaran &quot;bagian saya&quot; di log pribadi tiap anggota
-                                      ikut dibatalkan & saldo dikembalikan (berlaku saat mereka
-                                      membuka aplikasi).
-                                    </AlertDialogDescription>
-                                  </AlertDialogHeader>
-                                  <AlertDialogFooter>
-                                    <AlertDialogCancel className="text-xs">Batal</AlertDialogCancel>
-                                    <AlertDialogAction
-                                      className="text-xs bg-rose-600 hover:bg-rose-700 text-white"
-                                      onClick={() => handleDeleteTransaction(tx)}
-                                    >
-                                      Ya, Hapus
-                                    </AlertDialogAction>
-                                  </AlertDialogFooter>
-                                </AlertDialogContent>
-                              </AlertDialog>
-                            </div>
-                          ) : (
-                            <span className="text-[11px] text-muted-foreground">—</span>
-                          )}
-                        </TableCell>
+                        </ListCardMeta>
+                        <div className="mt-1 truncate text-[11px] text-muted-foreground">{allMembers}</div>
+                        <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-border/60 pt-2">
+                          {settleAction(tx)}
+                          {manageAction(tx)}
+                        </div>
+                      </ListCard>
+                    )
+                  })}
+                </div>
+
+                {/* Desktop: tabel */}
+                <div className="hidden w-full overflow-x-auto md:block">
+                  <Table className="w-full min-w-[760px]">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="px-3.5 py-3 text-xs font-semibold text-muted-foreground whitespace-nowrap">Tanggal</TableHead>
+                        <TableHead className="px-3.5 py-3 text-xs font-semibold text-muted-foreground">Keterangan Transaksi</TableHead>
+                        <TableHead className="px-3.5 py-3 text-xs font-semibold text-muted-foreground whitespace-nowrap">Kategori</TableHead>
+                        <TableHead className="px-3.5 py-3 text-xs font-semibold text-muted-foreground whitespace-nowrap">Dibayar Oleh</TableHead>
+                        <TableHead className="px-3.5 py-3 text-xs font-semibold text-muted-foreground">Ditanggung Oleh</TableHead>
+                        <TableHead className="px-3.5 py-3 text-xs font-semibold text-muted-foreground whitespace-nowrap">Total Nominal</TableHead>
+                        <TableHead className="px-3.5 py-3 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">Bagian Saya</TableHead>
+                        <TableHead className="px-3.5 py-3 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">Aksi Pelunasan</TableHead>
+                        <TableHead className="px-3.5 py-3 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">Kelola</TableHead>
                       </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
+                    </TableHeader>
+                    <TableBody>
+                      {paginatedTransactions.map((tx) => (
+                        <TableRow key={tx.id}>
+                          <TableCell className="px-3.5 py-3 text-xs font-medium text-muted-foreground whitespace-nowrap">
+                            {tx.formattedDate}
+                          </TableCell>
+                          <TableCell className="max-w-[200px] truncate px-3.5 py-3 text-xs font-semibold">
+                            {tx.title}
+                          </TableCell>
+                          <TableCell className="px-3.5 py-3 whitespace-nowrap">
+                            <Badge variant="outline" className="border-border px-2 py-0 text-[11px] font-normal">
+                              {tx.category}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="px-3.5 py-3 text-xs font-bold text-foreground whitespace-nowrap">
+                            {tx.paidBy}
+                            {members.find((m) => m.isMe)?.name === tx.paidBy ? " (Saya)" : ""}
+                          </TableCell>
+                          <TableCell className="max-w-[160px] truncate px-3.5 py-3 text-xs text-muted-foreground">
+                            {members.length > 0 && tx.splitBetween.length >= members.length
+                              ? `Semua Anggota (${members.length})`
+                              : tx.splitBetween.join(", ")}
+                          </TableCell>
+                          <TableCell className="px-3.5 py-3 text-xs font-bold text-foreground whitespace-nowrap">
+                            {fmt(tx.totalAmount)}
+                            <span className="block text-[10px] font-normal text-muted-foreground">
+                              ÷ {tx.splitBetween.length} orang
+                            </span>
+                          </TableCell>
+                          <TableCell className="px-3.5 py-3 text-right text-xs whitespace-nowrap">{shareCell(tx)}</TableCell>
+                          <TableCell className="px-3.5 py-3 text-right whitespace-nowrap">{settleAction(tx)}</TableCell>
+                          <TableCell className="px-3.5 py-3 text-right whitespace-nowrap">
+                            <div className="flex justify-end">{manageAction(tx)}</div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </>
+            )}
           </CardContent>
 
           {/* Pagination Controls */}
@@ -898,7 +922,7 @@ export default function TransaksiKosPage() {
               <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} required />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <label className="text-xs font-semibold text-muted-foreground">Total Nominal ({symbol})</label>
                 <Input
@@ -1008,6 +1032,31 @@ export default function TransaksiKosPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Konfirmasi Hapus Split Bill */}
+      <AlertDialog open={!!confirmDelete} onOpenChange={(open) => !open && setConfirmDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-rose-600 dark:text-rose-400">
+              Hapus split bill &quot;{confirmDelete?.title}&quot;?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-xs leading-relaxed">
+              Transaksi bersama ini dihapus untuk semua penghuni. Pencatatan pengeluaran
+              &quot;bagian saya&quot; di log pribadi tiap anggota ikut dibatalkan &amp; saldo
+              dikembalikan (berlaku saat mereka membuka aplikasi).
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="text-xs">Batal</AlertDialogCancel>
+            <AlertDialogAction
+              className="text-xs bg-rose-600 hover:bg-rose-700 text-white"
+              onClick={() => confirmDelete && handleDeleteTransaction(confirmDelete)}
+            >
+              Ya, Hapus
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

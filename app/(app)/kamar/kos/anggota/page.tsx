@@ -224,7 +224,7 @@ export default function AnggotaKosPage() {
   return (
     <div className="flex flex-col min-w-0 max-w-full overflow-x-hidden">
       {/* Header Bar */}
-      <header className="flex h-16 shrink-0 items-center justify-between gap-2 border-b px-4 min-w-0">
+      <header className="flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-x-2 gap-y-2 border-b px-4 py-2 min-w-0 md:h-16 md:flex-nowrap md:py-0">
         <div className="flex items-center gap-2 min-w-0">
           <SidebarTrigger className="-ml-1" />
           <Separator
@@ -254,11 +254,14 @@ export default function AnggotaKosPage() {
           onClick={handleCopyInviteCode}
         >
           {copiedCode ? (
-            <CheckCircle2 className="size-4 mr-1.5 text-emerald-600" />
+            <CheckCircle2 className="size-4 sm:mr-1.5 text-emerald-600" />
           ) : (
-            <Copy className="size-4 mr-1.5 text-muted-foreground" />
+            <Copy className="size-4 sm:mr-1.5 text-muted-foreground" />
           )}
-          {copiedCode ? "Tersalin!" : `Salin Kode: ${inviteCode}`}
+          <span className="hidden sm:inline">
+            {copiedCode ? "Tersalin!" : `Salin Kode: ${inviteCode}`}
+          </span>
+          <span className="sm:hidden">{copiedCode ? "Tersalin!" : inviteCode}</span>
         </Button>
       </header>
 
@@ -288,7 +291,7 @@ export default function AnggotaKosPage() {
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button size="sm" variant="outline" className="text-xs border-border shadow-none" onClick={handleCopyInviteCode}>
               <Building2 className="size-4 mr-1.5 text-primary" />
               Undang Anggota

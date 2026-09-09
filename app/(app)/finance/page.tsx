@@ -58,6 +58,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { CreditCard } from "@/components/shared-assets/credit-card/credit-card"
+import { ListCard, ListCardHead, ListCardMeta } from "@/components/ui/list-card"
 import {
   Wallet,
   Building2,
@@ -356,18 +357,19 @@ export default function FinancePage() {
   return (
     <>
       {/* Header Bar */}
-      <header className="flex h-16 shrink-0 items-center justify-between gap-2 border-b px-4">
-        <div className="flex items-center gap-2">
-          <SidebarTrigger className="-ml-1" />
+      <header className="flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-x-2 gap-y-2 border-b px-4 py-2 md:h-16 md:flex-nowrap md:py-0">
+        <div className="flex min-w-0 items-center gap-2">
+          <SidebarTrigger className="-ml-1 shrink-0" />
           <Separator
             orientation="vertical"
             className="mr-2 data-vertical:h-4 data-vertical:self-auto"
           />
-          <Breadcrumb>
+          <Breadcrumb className="min-w-0">
             <BreadcrumbList>
-              <BreadcrumbItem>
-                <BreadcrumbPage className="font-semibold text-base">
-                  Sumber Dana & Target &gt; Sumber Dana (Akun Keuangan)
+              <BreadcrumbItem className="min-w-0">
+                <BreadcrumbPage className="truncate font-semibold text-sm sm:text-base">
+                  <span className="sm:hidden">Sumber Dana</span>
+                  <span className="hidden sm:inline">Sumber Dana &amp; Target &gt; Sumber Dana (Akun Keuangan)</span>
                 </BreadcrumbPage>
               </BreadcrumbItem>
             </BreadcrumbList>
@@ -375,11 +377,12 @@ export default function FinancePage() {
         </div>
 
         {/* Global Quick Action Buttons */}
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <Dialog open={isTransferDialogOpen} onOpenChange={setIsTransferDialogOpen}>
             <DialogTrigger asChild>
               <Button size="sm" variant="outline" className="shadow-none text-xs border-border" disabled={accounts.length < 2}>
-                <ArrowLeftRight className="size-3.5 mr-1.5" /> Transfer Antar Akun
+                <ArrowLeftRight className="size-3.5 sm:mr-1.5" />
+                <span className="hidden sm:inline">Transfer Antar Akun</span>
               </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-md shadow-none border">
@@ -462,7 +465,9 @@ export default function FinancePage() {
           <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
             <DialogTrigger asChild>
               <Button size="sm" className="shadow-none text-xs">
-                <Plus className="size-4 mr-1.5" /> Tambah Sumber Dana
+                <Plus className="size-4 sm:mr-1.5" />
+                <span className="hidden sm:inline">Tambah Sumber Dana</span>
+                <span className="sm:hidden">Tambah</span>
               </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-md shadow-none border">
@@ -487,7 +492,7 @@ export default function FinancePage() {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <label className="text-xs font-semibold text-muted-foreground">Tipe Akun</label>
                     <Select value={newAccType} onValueChange={setNewAccType}>
@@ -535,7 +540,7 @@ export default function FinancePage() {
                   <p className="text-[11px] text-muted-foreground">Muncul sebagai logo di pojok kartu. Pilih &quot;Tanpa Logo&quot; untuk tunai / e-wallet.</p>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <label className="text-xs font-semibold text-muted-foreground">Saldo Awal ({symbol})</label>
                     <Input
@@ -601,7 +606,7 @@ export default function FinancePage() {
         )}
 
         {/* 1. Metric Summary Cards */}
-        <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3">
           <Card className="shadow-none border border-border p-3.5 gap-2 bg-card sm:p-5 sm:gap-3">
             <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
               <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
@@ -801,41 +806,39 @@ export default function FinancePage() {
             </Select>
           </CardHeader>
 
-          <CardContent className="p-0 -mx-5">
-            <p className="px-5 pb-2 text-[11px] text-muted-foreground sm:hidden">
-              Geser tabel ke samping untuk lihat semua kolom →
-            </p>
-            <div className="w-full overflow-x-auto">
-            <Table className="min-w-[640px]">
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Sumber Dana</TableHead>
-                  <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Keterangan Mutasi</TableHead>
-                  <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Tipe</TableHead>
-                  <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Tanggal</TableHead>
-                  <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground text-right">Nominal</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredMutations.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={5} className="text-center py-8 text-xs text-muted-foreground">
-                      Belum ada mutasi tercatat untuk sumber dana ini.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  filteredMutations.map((m) => (
-                    <TableRow key={m.id}>
-                      <TableCell className="px-5 py-3.5 font-bold text-xs">
-                        {m.accountName}
-                      </TableCell>
-                      <TableCell className="px-5 py-3.5 text-xs text-foreground font-medium">
-                        {m.title}
-                      </TableCell>
-                      <TableCell className="px-5 py-3.5">
+          <CardContent className="p-0">
+            {filteredMutations.length === 0 ? (
+              <div className="py-10 text-center text-xs text-muted-foreground">
+                Belum ada mutasi tercatat untuk sumber dana ini.
+              </div>
+            ) : (
+              <>
+                {/* Mobile: daftar kartu */}
+                <div className="space-y-2.5 md:hidden">
+                  {filteredMutations.map((m) => (
+                    <ListCard key={m.id}>
+                      <ListCardHead>
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold">{m.title}</div>
+                          <div className="mt-0.5 text-[11px] font-medium text-muted-foreground">{m.accountName}</div>
+                        </div>
+                        <div
+                          className={`shrink-0 text-sm font-extrabold ${
+                            m.type === "in"
+                              ? "text-emerald-600 dark:text-emerald-400"
+                              : m.type === "out"
+                              ? "text-rose-600 dark:text-rose-400"
+                              : "text-foreground"
+                          }`}
+                        >
+                          {m.type === "in" ? "+" : m.type === "out" ? "-" : ""}
+                          {fmt(m.amount)}
+                        </div>
+                      </ListCardHead>
+                      <ListCardMeta>
                         <Badge
                           variant="outline"
-                          className={`text-[10px] font-semibold border-border ${
+                          className={`px-1.5 py-0 text-[10px] font-semibold border-border ${
                             m.type === "in"
                               ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/30"
                               : m.type === "out"
@@ -845,27 +848,64 @@ export default function FinancePage() {
                         >
                           {m.type === "in" ? "Pemasukan" : m.type === "out" ? "Pengeluaran" : "Transfer"}
                         </Badge>
-                      </TableCell>
-                      <TableCell className="px-5 py-3.5 text-xs text-muted-foreground">
-                        {m.date}
-                      </TableCell>
-                      <TableCell
-                        className={`px-5 py-3.5 text-right font-extrabold text-xs ${
-                          m.type === "in"
-                            ? "text-emerald-600 dark:text-emerald-400"
-                            : m.type === "out"
-                            ? "text-rose-600 dark:text-rose-400"
-                            : "text-foreground"
-                        }`}
-                      >
-                        {m.type === "in" ? "+" : m.type === "out" ? "-" : ""}{fmt(m.amount)}
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-            </div>
+                        <span aria-hidden>·</span>
+                        <span>{m.date}</span>
+                      </ListCardMeta>
+                    </ListCard>
+                  ))}
+                </div>
+
+                {/* Desktop: tabel */}
+                <div className="-mx-5 hidden md:block">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Sumber Dana</TableHead>
+                        <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Keterangan Mutasi</TableHead>
+                        <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Tipe</TableHead>
+                        <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Tanggal</TableHead>
+                        <TableHead className="px-5 py-3 text-right text-xs font-semibold text-muted-foreground">Nominal</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredMutations.map((m) => (
+                        <TableRow key={m.id}>
+                          <TableCell className="px-5 py-3.5 text-xs font-bold">{m.accountName}</TableCell>
+                          <TableCell className="px-5 py-3.5 text-xs font-medium text-foreground">{m.title}</TableCell>
+                          <TableCell className="px-5 py-3.5">
+                            <Badge
+                              variant="outline"
+                              className={`text-[10px] font-semibold border-border ${
+                                m.type === "in"
+                                  ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/30"
+                                  : m.type === "out"
+                                  ? "bg-rose-500/10 text-rose-600 border-rose-500/30"
+                                  : "bg-amber-500/10 text-amber-600 border-amber-500/30"
+                              }`}
+                            >
+                              {m.type === "in" ? "Pemasukan" : m.type === "out" ? "Pengeluaran" : "Transfer"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="px-5 py-3.5 text-xs text-muted-foreground">{m.date}</TableCell>
+                          <TableCell
+                            className={`px-5 py-3.5 text-right text-xs font-extrabold ${
+                              m.type === "in"
+                                ? "text-emerald-600 dark:text-emerald-400"
+                                : m.type === "out"
+                                ? "text-rose-600 dark:text-rose-400"
+                                : "text-foreground"
+                            }`}
+                          >
+                            {m.type === "in" ? "+" : m.type === "out" ? "-" : ""}
+                            {fmt(m.amount)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -889,7 +929,7 @@ export default function FinancePage() {
               <Input value={editName} onChange={(e) => setEditName(e.target.value)} required />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <label className="text-xs font-semibold text-muted-foreground">Tipe Akun</label>
                 <Select value={editType} onValueChange={setEditType}>
@@ -943,7 +983,7 @@ export default function FinancePage() {
               </Select>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <label className="text-xs font-semibold text-muted-foreground">Saldo Saat Ini ({symbol})</label>
                 <Input

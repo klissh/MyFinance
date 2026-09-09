@@ -76,8 +76,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
+import { ListCard, ListCardHead, ListCardMeta } from "@/components/ui/list-card"
 import { Spinner } from "@/components/ui/spinner"
 import {
   Plus,
@@ -235,6 +235,7 @@ export default function TransaksiPage() {
   const [editNotes, setEditNotes] = useState("")
   const [isEditing, setIsEditing] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<TransactionItem | null>(null)
 
   const openEdit = (tx: TransactionItem) => {
     setEditTx(tx)
@@ -269,11 +270,43 @@ export default function TransaksiPage() {
 
   const handleDeleteTransaction = async (tx: TransactionItem) => {
     setDeletingId(tx.id)
+    setConfirmDelete(null)
     await transactionService.remove(tx.id)
     await refreshTransactions()
     setDeletingId(null)
     showNotification(`Transaksi "${tx.title}" dihapus & saldo dikembalikan.`)
   }
+
+  // Cluster aksi (edit + hapus) dipakai tabel desktop & daftar kartu mobile.
+  const txActions = (tx: TransactionItem) =>
+    isSystemTransaction(tx.notes) ? (
+      <span
+        className="inline-flex items-center gap-1 text-[11px] text-muted-foreground"
+        title="Transaksi otomatis — ubah dari fitur sumbernya (split bill kos / target tabungan / iuran)"
+      >
+        <Lock className="size-3" /> Terkunci
+      </span>
+    ) : (
+      <div className="flex items-center justify-end gap-1">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-7 text-muted-foreground hover:text-foreground"
+          onClick={() => openEdit(tx)}
+        >
+          <Pencil className="size-3.5" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-7 text-muted-foreground hover:text-rose-600"
+          disabled={deletingId === tx.id}
+          onClick={() => setConfirmDelete(tx)}
+        >
+          <Trash2 className="size-3.5" />
+        </Button>
+      </div>
+    )
 
   return (
     <>
@@ -308,7 +341,7 @@ export default function TransaksiPage() {
         )}
 
         {/* 1. Summary Metric Cards */}
-        <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3">
           <Card className="shadow-none border border-border p-3.5 gap-2 bg-card sm:p-5 sm:gap-3">
             <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0">
               <CardTitle className="text-xs font-semibold text-muted-foreground tracking-tight">
@@ -480,7 +513,7 @@ export default function TransaksiPage() {
                     />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-1">
                       <label className="text-xs font-semibold text-muted-foreground">Nominal ({symbol})</label>
                       <Input
@@ -510,7 +543,7 @@ export default function TransaksiPage() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {/* SHADCN POPOVER CALENDAR DATE PICKER */}
                     <div className="space-y-1">
                       <label className="text-xs font-semibold text-muted-foreground">Tanggal</label>
@@ -588,127 +621,122 @@ export default function TransaksiPage() {
             </Dialog>
           </CardHeader>
 
-          {/* Table */}
-          <CardContent className="p-0 -mx-5">
-            <p className="px-5 pb-2 text-[11px] text-muted-foreground sm:hidden">
-              Geser tabel ke samping untuk lihat semua kolom →
-            </p>
-            <div className="w-full overflow-x-auto">
-            <Table className="min-w-[720px]">
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Tanggal</TableHead>
-                  <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Tipe</TableHead>
-                  <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Keterangan</TableHead>
-                  <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Kategori</TableHead>
-                  <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Sumber Dana</TableHead>
-                  <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground text-right">Nominal</TableHead>
-                  <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground text-right">Aksi</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {paginatedTransactions.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-xs text-muted-foreground">
-                      Tidak ada transaksi yang ditemukan.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  paginatedTransactions.map((tx) => (
-                    <TableRow key={tx.id}>
-                      <TableCell className="px-5 py-3.5 text-xs text-muted-foreground font-medium">
-                        {tx.formattedDate}
-                      </TableCell>
-                      <TableCell className="px-5 py-3.5">
+          {/* Daftar transaksi — tabel di ≥md, kartu ringkas di mobile */}
+          <CardContent className="p-0">
+            {paginatedTransactions.length === 0 ? (
+              <div className="py-10 text-center text-xs text-muted-foreground">
+                Tidak ada transaksi yang ditemukan.
+              </div>
+            ) : (
+              <>
+                {/* Mobile: daftar kartu */}
+                <div className="space-y-2.5 md:hidden">
+                  {paginatedTransactions.map((tx) => (
+                    <ListCard key={tx.id}>
+                      <ListCardHead>
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold">{tx.title}</div>
+                          {stripLedgerRef(tx.notes) && (
+                            <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+                              {stripLedgerRef(tx.notes)}
+                            </div>
+                          )}
+                        </div>
+                        <div
+                          className={`shrink-0 text-sm font-bold ${
+                            tx.type === "in" ? "text-emerald-600 dark:text-emerald-400" : "text-foreground"
+                          }`}
+                        >
+                          {tx.type === "in" ? "+" : "-"}
+                          {fmt(tx.amount)}
+                        </div>
+                      </ListCardHead>
+                      <ListCardMeta>
+                        <span>{tx.formattedDate}</span>
+                        <span aria-hidden>·</span>
+                        <Badge variant="outline" className="border-border px-1.5 py-0 text-[10px] font-normal">
+                          {tx.category}
+                        </Badge>
+                        <span aria-hidden>·</span>
+                        <span>{tx.account}</span>
+                      </ListCardMeta>
+                      <div className="mt-2.5 flex items-center justify-between border-t border-border/60 pt-2">
                         {tx.type === "in" ? (
-                          <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-none shadow-none text-xs font-semibold">
+                          <Badge className="border-none bg-emerald-500/15 text-xs font-semibold text-emerald-600 shadow-none dark:text-emerald-400">
                             Pemasukan
                           </Badge>
                         ) : (
-                          <Badge className="bg-rose-500/15 text-rose-600 dark:text-rose-400 border-none shadow-none text-xs font-semibold">
+                          <Badge className="border-none bg-rose-500/15 text-xs font-semibold text-rose-600 shadow-none dark:text-rose-400">
                             Pengeluaran
                           </Badge>
                         )}
-                      </TableCell>
-                      <TableCell className="px-5 py-3.5">
-                        <div className="font-semibold text-sm">{tx.title}</div>
-                        {stripLedgerRef(tx.notes) && (
-                          <div className="text-xs text-muted-foreground">{stripLedgerRef(tx.notes)}</div>
-                        )}
-                      </TableCell>
-                      <TableCell className="px-5 py-3.5">
-                        <Badge variant="outline" className="text-xs font-normal border-border">
-                          {tx.category}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="px-5 py-3.5 text-xs text-muted-foreground font-medium">
-                        {tx.account}
-                      </TableCell>
-                      <TableCell className={`px-5 py-3.5 text-right font-bold text-sm ${
-                        tx.type === 'in' ? 'text-emerald-600 dark:text-emerald-400' : 'text-foreground'
-                      }`}>
-                        {tx.type === "in" ? "+" : "-"}{fmt(tx.amount)}
-                      </TableCell>
-                      <TableCell className="px-5 py-3.5 text-right whitespace-nowrap">
-                        {isSystemTransaction(tx.notes) ? (
-                          <span
-                            className="inline-flex items-center gap-1 text-[11px] text-muted-foreground"
-                            title="Transaksi otomatis — ubah dari fitur sumbernya (split bill kos / target tabungan / iuran)"
+                        {txActions(tx)}
+                      </div>
+                    </ListCard>
+                  ))}
+                </div>
+
+                {/* Desktop: tabel */}
+                <div className="-mx-5 hidden md:block">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Tanggal</TableHead>
+                        <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Tipe</TableHead>
+                        <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Keterangan</TableHead>
+                        <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Kategori</TableHead>
+                        <TableHead className="px-5 py-3 text-xs font-semibold text-muted-foreground">Sumber Dana</TableHead>
+                        <TableHead className="px-5 py-3 text-right text-xs font-semibold text-muted-foreground">Nominal</TableHead>
+                        <TableHead className="px-5 py-3 text-right text-xs font-semibold text-muted-foreground">Aksi</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {paginatedTransactions.map((tx) => (
+                        <TableRow key={tx.id}>
+                          <TableCell className="px-5 py-3.5 text-xs font-medium text-muted-foreground">
+                            {tx.formattedDate}
+                          </TableCell>
+                          <TableCell className="px-5 py-3.5">
+                            {tx.type === "in" ? (
+                              <Badge className="border-none bg-emerald-500/15 text-xs font-semibold text-emerald-600 shadow-none dark:text-emerald-400">
+                                Pemasukan
+                              </Badge>
+                            ) : (
+                              <Badge className="border-none bg-rose-500/15 text-xs font-semibold text-rose-600 shadow-none dark:text-rose-400">
+                                Pengeluaran
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="px-5 py-3.5">
+                            <div className="text-sm font-semibold">{tx.title}</div>
+                            {stripLedgerRef(tx.notes) && (
+                              <div className="text-xs text-muted-foreground">{stripLedgerRef(tx.notes)}</div>
+                            )}
+                          </TableCell>
+                          <TableCell className="px-5 py-3.5">
+                            <Badge variant="outline" className="border-border text-xs font-normal">
+                              {tx.category}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="px-5 py-3.5 text-xs font-medium text-muted-foreground">
+                            {tx.account}
+                          </TableCell>
+                          <TableCell
+                            className={`px-5 py-3.5 text-right text-sm font-bold ${
+                              tx.type === "in" ? "text-emerald-600 dark:text-emerald-400" : "text-foreground"
+                            }`}
                           >
-                            <Lock className="size-3" /> Terkunci
-                          </span>
-                        ) : (
-                          <div className="flex items-center justify-end gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="size-7 text-muted-foreground hover:text-foreground"
-                              onClick={() => openEdit(tx)}
-                            >
-                              <Pencil className="size-3.5" />
-                            </Button>
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="size-7 text-muted-foreground hover:text-rose-600"
-                                  disabled={deletingId === tx.id}
-                                >
-                                  <Trash2 className="size-3.5" />
-                                </Button>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle className="text-rose-600 dark:text-rose-400">
-                                    Hapus transaksi ini?
-                                  </AlertDialogTitle>
-                                  <AlertDialogDescription className="text-xs leading-relaxed">
-                                    &quot;{tx.title}&quot; ({tx.type === "in" ? "+" : "-"}{fmt(tx.amount)}) akan
-                                    dihapus permanen. Saldo akun <strong>{tx.account}</strong> akan
-                                    dikembalikan seperti sebelum transaksi ini.
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel className="text-xs">Batal</AlertDialogCancel>
-                                  <AlertDialogAction
-                                    className="text-xs bg-rose-600 hover:bg-rose-700 text-white"
-                                    onClick={() => handleDeleteTransaction(tx)}
-                                  >
-                                    Ya, Hapus
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
-                          </div>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-            </div>
+                            {tx.type === "in" ? "+" : "-"}
+                            {fmt(tx.amount)}
+                          </TableCell>
+                          <TableCell className="px-5 py-3.5 text-right whitespace-nowrap">{txActions(tx)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </>
+            )}
           </CardContent>
 
           {/* Pagination Controls */}
@@ -813,7 +841,7 @@ export default function TransaksiPage() {
               <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} required />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <label className="text-xs font-semibold text-muted-foreground">Nominal ({symbol})</label>
                 <Input
@@ -894,6 +922,30 @@ export default function TransaksiPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Konfirmasi Hapus Transaksi */}
+      <AlertDialog open={!!confirmDelete} onOpenChange={(open) => !open && setConfirmDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-rose-600 dark:text-rose-400">Hapus transaksi ini?</AlertDialogTitle>
+            <AlertDialogDescription className="text-xs leading-relaxed">
+              &quot;{confirmDelete?.title}&quot; (
+              {confirmDelete?.type === "in" ? "+" : "-"}
+              {confirmDelete ? fmt(confirmDelete.amount) : ""}) akan dihapus permanen. Saldo akun{" "}
+              <strong>{confirmDelete?.account}</strong> akan dikembalikan seperti sebelum transaksi ini.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="text-xs">Batal</AlertDialogCancel>
+            <AlertDialogAction
+              className="text-xs bg-rose-600 hover:bg-rose-700 text-white"
+              onClick={() => confirmDelete && handleDeleteTransaction(confirmDelete)}
+            >
+              Ya, Hapus
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   )
 }
