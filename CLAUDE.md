@@ -258,6 +258,23 @@ UPDATE+DELETE (anggota kamar), `room_members` DELETE (Ketua Kos keluarkan anggot
 - Header `/finance` & `/kamar/kos/anggota`: `flex-wrap` + label tombol/breadcrumb
   disingkat di mobile (`hidden sm:inline`).
 
+## Ronde 9 (2026-09-10) — pilih Sumber Dana pakai akun asli
+
+Dropdown "Sumber Dana" di dialog **tambah** (bukan cuma edit) sebelumnya
+hardcoded `Bank BCA / Mandiri / Tunai / GoPay` — tidak nyambung ke akun asli, jadi
+`transactionService.add` gagal resolve `account_id` & saldo tak berubah.
+
+- `resolvePersonalAccount` di `lib/db.ts` di-`export`.
+- **`/transaksi`** (dialog Catat Transaksi), **`/goals`** (Setor Tabungan + Setoran
+  Awal saat buat target), **`/scheduled`** (Sumber Dana Default): dropdown kini
+  `accounts.map()` dari `accountService.getAll()`. Default dipilih via
+  `resolvePersonalAccount` (akun bank pertama → akun mana pun). Kalau belum ada
+  akun: dropdown disabled + hint link ke `/finance` (transaksi tetap tercatat,
+  saldo tidak berubah).
+- `goals` sekarang ikut load `accountService.getAll()` (dulu tidak).
+- Daftar akun di-refresh tiap dialog dibuka (`useEffect` pada state open-dialog),
+  jadi akun yang baru dibuat langsung muncul.
+
 ## Yang TIDAK perlu dikerjakan otomatis
 
 - Migrasi data dari Bizmo ke MSU — menunggu tindakan manusia (pemilik Bizmo invite member, atau ekspor file manual).

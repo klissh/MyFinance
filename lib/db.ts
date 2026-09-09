@@ -138,7 +138,7 @@ const BASE_STORAGE_KEYS = {
 
 // Pilih akun personal untuk auto-catat transaksi: pakai `preferred` bila valid,
 // kalau tidak ambil akun bank pertama, lalu akun mana pun, terakhir "Bank BCA".
-function resolvePersonalAccount(
+export function resolvePersonalAccount(
   accounts: FinancialAccountRecord[],
   preferred?: string,
 ): string {

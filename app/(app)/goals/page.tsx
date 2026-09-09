@@ -65,26 +65,33 @@ import {
   Pencil,
   Trash2,
 } from "lucide-react"
+import Link from "next/link"
 import {
   goalService,
   transactionService,
+  accountService,
+  resolvePersonalAccount,
   GoalRecord,
   TransactionRecord,
+  FinancialAccountRecord,
 } from "@/lib/db"
 
 export default function GoalsPage() {
   const { fmt, formatInput, formatValue, parseInput, symbol, zero } = useMoney()
   const [goals, setGoals] = useState<GoalRecord[]>([])
   const [transactions, setTransactions] = useState<TransactionRecord[]>([])
+  const [accounts, setAccounts] = useState<FinancialAccountRecord[]>([])
 
   useEffect(() => {
     async function loadData() {
-      const [goalList, txList] = await Promise.all([
+      const [goalList, txList, accList] = await Promise.all([
         goalService.getAll(),
         transactionService.getAll(),
+        accountService.getAll(),
       ])
       setGoals(goalList)
       setTransactions(txList)
+      setAccounts(accList)
     }
     loadData()
   }, [])
@@ -104,13 +111,24 @@ export default function GoalsPage() {
   const [newTargetAmount, setNewTargetAmount] = useState("")
   const [newDeadline, setNewDeadline] = useState("Des 2026")
   const [newInitialDeposit, setNewInitialDeposit] = useState("")
-  const [newAccount, setNewAccount] = useState("Bank BCA")
+  const [newAccount, setNewAccount] = useState("")
 
   // Dialog State: Setor Tabungan
   const [isDepositOpen, setIsDepositOpen] = useState(false)
   const [selectedGoalId, setSelectedGoalId] = useState<string>("")
   const [depositAmount, setDepositAmount] = useState("")
-  const [depositAccount, setDepositAccount] = useState("Bank BCA")
+  const [depositAccount, setDepositAccount] = useState("")
+
+  // Segarkan daftar sumber dana saat dialog buat target / setor tabungan dibuka.
+  useEffect(() => {
+    if (!isAddGoalOpen && !isDepositOpen) return
+    accountService.getAll().then((accs) => {
+      setAccounts(accs)
+      const def = accs.length ? resolvePersonalAccount(accs) : ""
+      setNewAccount((p) => (accs.some((a) => a.name === p) ? p : def))
+      setDepositAccount((p) => (accs.some((a) => a.name === p) ? p : def))
+    })
+  }, [isAddGoalOpen, isDepositOpen])
 
   // Pagination State for Target Cards Grid
   const [goalCurrentPage, setGoalCurrentPage] = useState(1)
@@ -413,17 +431,22 @@ export default function GoalsPage() {
 
                     <div className="space-y-1">
                       <label className="text-xs font-semibold text-muted-foreground">Sumber Dana Setoran</label>
-                      <Select value={depositAccount} onValueChange={setDepositAccount}>
+                      <Select value={depositAccount} onValueChange={setDepositAccount} disabled={accounts.length === 0}>
                         <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Pilih Sumber Dana" />
+                          <SelectValue placeholder={accounts.length ? "Pilih Sumber Dana" : "Belum ada sumber dana"} />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="Bank BCA">Bank BCA</SelectItem>
-                          <SelectItem value="Bank Mandiri">Bank Mandiri</SelectItem>
-                          <SelectItem value="Tunai">Tunai / Cash</SelectItem>
-                          <SelectItem value="GoPay">GoPay</SelectItem>
+                          {accounts.map((a) => (
+                            <SelectItem key={a.id} value={a.name}>{a.name}</SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
+                      {accounts.length === 0 && (
+                        <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                          Buat sumber dana dulu di menu{" "}
+                          <Link href="/finance" className="underline">Sumber Dana</Link>.
+                        </p>
+                      )}
                     </div>
 
                     <DialogFooter className="pt-2">
@@ -529,15 +552,14 @@ export default function GoalsPage() {
 
                       <div className="space-y-1">
                         <label className="text-xs font-semibold text-muted-foreground">Sumber Dana Setoran</label>
-                        <Select value={newAccount} onValueChange={setNewAccount}>
+                        <Select value={newAccount} onValueChange={setNewAccount} disabled={accounts.length === 0}>
                           <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Sumber Dana" />
+                            <SelectValue placeholder={accounts.length ? "Sumber Dana" : "Belum ada"} />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="Bank BCA">Bank BCA</SelectItem>
-                            <SelectItem value="Bank Mandiri">Bank Mandiri</SelectItem>
-                            <SelectItem value="Tunai">Tunai / Cash</SelectItem>
-                            <SelectItem value="GoPay">GoPay</SelectItem>
+                            {accounts.map((a) => (
+                              <SelectItem key={a.id} value={a.name}>{a.name}</SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                       </div>

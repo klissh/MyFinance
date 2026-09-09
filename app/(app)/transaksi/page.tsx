@@ -1,10 +1,12 @@
 "use client"
 
 import React, { useState, useEffect } from "react"
+import Link from "next/link"
 import {
   transactionService,
   kamarService,
   accountService,
+  resolvePersonalAccount,
   stripLedgerRef,
   isSystemTransaction,
   FinancialAccountRecord,
@@ -144,10 +146,21 @@ export default function TransaksiPage() {
   const [newAmount, setNewAmount] = useState("")
   const [newType, setNewType] = useState<"in" | "out">("out")
   const [newCategory, setNewCategory] = useState("Konsumsi")
-  const [newAccount, setNewAccount] = useState("Bank BCA")
+  const [newAccount, setNewAccount] = useState("")
   const [newSelectedDate, setNewSelectedDate] = useState<Date>(new Date())
   const [newNotes, setNewNotes] = useState("")
   const [notification, setNotification] = useState<string | null>(null)
+
+  // Segarkan daftar sumber dana tiap kali dialog "Catat Transaksi" dibuka.
+  useEffect(() => {
+    if (!isAddDialogOpen) return
+    accountService.getAll().then((accs) => {
+      setAccounts(accs)
+      setNewAccount((prev) =>
+        accs.some((a) => a.name === prev) ? prev : accs.length ? resolvePersonalAccount(accs) : "",
+      )
+    })
+  }, [isAddDialogOpen])
 
   const showNotification = (msg: string) => {
     setNotification(msg)
@@ -576,17 +589,25 @@ export default function TransaksiPage() {
 
                     <div className="space-y-1">
                       <label className="text-xs font-semibold text-muted-foreground">Sumber Dana</label>
-                      <Select value={newAccount} onValueChange={setNewAccount}>
+                      <Select value={newAccount} onValueChange={setNewAccount} disabled={accounts.length === 0}>
                         <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Sumber Dana" />
+                          <SelectValue placeholder={accounts.length ? "Pilih sumber dana" : "Belum ada sumber dana"} />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="Bank BCA">Bank BCA</SelectItem>
-                          <SelectItem value="Bank Mandiri">Bank Mandiri</SelectItem>
-                          <SelectItem value="Tunai">Tunai / Cash</SelectItem>
-                          <SelectItem value="GoPay">GoPay</SelectItem>
+                          {accounts.map((a) => (
+                            <SelectItem key={a.id} value={a.name}>
+                              {a.name}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
+                      {accounts.length === 0 && (
+                        <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                          Belum ada sumber dana — buat dulu di menu{" "}
+                          <Link href="/finance" className="underline">Sumber Dana</Link>. Transaksi tetap
+                          tercatat, tapi saldo tidak ikut berubah.
+                        </p>
+                      )}
                     </div>
                   </div>
 

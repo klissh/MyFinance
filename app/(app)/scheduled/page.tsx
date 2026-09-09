@@ -2,10 +2,12 @@
 
 import { useMoney } from "@/lib/currency"
 import React, { useState, useEffect } from "react"
+import Link from "next/link"
 import {
   transactionService,
   scheduledService,
   accountService,
+  resolvePersonalAccount,
   ScheduledBillRecord,
   FinancialAccountRecord,
 } from "@/lib/db"
@@ -116,11 +118,21 @@ export default function ScheduledPage() {
   const [newTitle, setNewTitle] = useState("")
   const [newAmount, setNewAmount] = useState("")
   const [newCategory, setNewCategory] = useState("Kamar Kos")
-  const [newAccount, setNewAccount] = useState("Bank BCA")
+  const [newAccount, setNewAccount] = useState("")
   const [newSelectedDate, setNewSelectedDate] = useState<Date>(new Date())
   const [newNotes, setNewNotes] = useState("")
 
   const [notification, setNotification] = useState<string | null>(null)
+
+  // Segarkan daftar sumber dana saat dialog "Tambah Jadwal" dibuka.
+  useEffect(() => {
+    if (!isAddDialogOpen) return
+    accountService.getAll().then((accs) => {
+      setAccounts(accs)
+      const def = accs.length ? resolvePersonalAccount(accs) : ""
+      setNewAccount((p) => (accs.some((a) => a.name === p) ? p : def))
+    })
+  }, [isAddDialogOpen])
 
   const showNotification = (msg: string) => {
     setNotification(msg)
@@ -391,16 +403,22 @@ export default function ScheduledPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-foreground">Sumber Dana Default</label>
-                  <Select value={newAccount} onValueChange={setNewAccount}>
+                  <Select value={newAccount} onValueChange={setNewAccount} disabled={accounts.length === 0}>
                     <SelectTrigger className="text-xs shadow-none">
-                      <SelectValue placeholder="Pilih Akun" />
+                      <SelectValue placeholder={accounts.length ? "Pilih Akun" : "Belum ada sumber dana"} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Bank BCA" className="text-xs">Bank BCA</SelectItem>
-                      <SelectItem value="Bank Mandiri" className="text-xs">Bank Mandiri</SelectItem>
-                      <SelectItem value="Tunai" className="text-xs">Tunai / Cash</SelectItem>
+                      {accounts.map((a) => (
+                        <SelectItem key={a.id} value={a.name} className="text-xs">{a.name}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
+                  {accounts.length === 0 && (
+                    <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                      Buat sumber dana dulu di menu{" "}
+                      <Link href="/finance" className="underline">Sumber Dana</Link>.
+                    </p>
+                  )}
                 </div>
 
                 <div className="space-y-1.5">
