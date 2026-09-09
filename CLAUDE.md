@@ -149,8 +149,9 @@ Perbaikan kode di `lib/db.ts` + halaman terkait (typecheck/lint/build lolos):
 - Pilihan mata uang per-device (localStorage), belum sinkron antar device / antar
   anggota kamar. Untuk split bill lintas mata uang tidak ada konversi — asumsinya
   semua anggota pakai mata uang yang sama.
-- Input desimal MYR: mengetik format IDR ("100.000") saat mode MYR akan diparse
-  sebagai 100 (titik = desimal). Mulai bersih di MYR → ketik "100000" atau "20.50".
+- Konversi angka tersimpan saat toggle mata uang **sengaja tidak dibuat** — lossy,
+  merusak akurasi historis, dan tidak aman untuk tabel `room_*` yang dipakai
+  bersama (lihat diskusi Ronde 6). Ganti mata uang = wipe + input ulang.
 
 ## Ronde 5 (2026-09-09) — tombol Edit & Hapus di semua entitas
 
@@ -189,6 +190,28 @@ UPDATE+DELETE (anggota kamar), `room_members` DELETE (Ketua Kos keluarkan anggot
 - Menghapus split bill membatalkan pencatatan "bagian saya" tiap anggota (termasuk
   yang sudah melunasi) — sesuai model "transaksi ini tidak pernah terjadi".
 - Tabel "Riwayat Mutasi" di `/finance` tetap read-only — kelola lewat `/transaksi`.
+
+## Ronde 6 (2026-09-09) — input nominal gaya bank Malaysia (MYR)
+
+- **`formatAmountInput` (MYR)** diganti jadi **entri sen**: user mengetik digit,
+  2 angka terakhir otomatis jadi sen, titik disisipkan sendiri. `"1"→"0.01"`,
+  `"125050"→"1,250.50"`, backspace menggeser nilai. Persis Maybank / Touch 'n Go.
+  IDR tetap digit-only (tanpa sen).
+- **`formatAmountValue(amount, c?)`** baru + `useMoney().formatValue` — untuk MENGISI
+  kolom input dari nilai yang sudah ada (dialog "Ubah"). Wajib dipakai di situ
+  (bukan `formatInput`), karena `formatInput` menafsirkan string sebagai ketikan
+  mentah. MYR selalu 2 desimal supaya digit-nya round-trip ke entri sen.
+  6 dialog Ubah (transaksi/finance/goals/scheduled/kebutuhan/kamar-kos) sudah pakai.
+- **`formatMoney` (MYR)** sekarang selalu 2 desimal (`minimumFractionDigits: 2`) —
+  "RM 1,250.50", bukan "RM 1,250.5". IDR tetap 0 desimal.
+- `/pengaturan` menampilkan contoh cara ketik sesuai mata uang aktif.
+- `kamar/baru`: default `createMonthlyFee` `""` (dulu `"200000"` mentah yang
+  bentrok dengan entri sen); placeholder ikut mata uang.
+- Diskusi konversi kurs real-time saat toggle: **ditolak** — 4 masalah (tidak ada
+  penanda mata uang di baris DB, tabel `room_*` shared 7 user, presisi/sejarah
+  hilang tiap round-trip, bulk update tak atomik). Solusi aman (kolom `currency`
+  di `profiles`/`rooms` + RPC atomik + preview) dipetakan tapi tidak dibangun
+  karena data masih testing → wipe + mulai bersih di RM.
 
 ## Yang TIDAK perlu dikerjakan otomatis
 

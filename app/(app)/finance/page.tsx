@@ -85,7 +85,7 @@ interface AccountMutation {
 }
 
 export default function FinancePage() {
-  const { fmt, formatInput, parseInput, symbol } = useMoney()
+  const { fmt, formatInput, formatValue, parseInput, symbol } = useMoney()
   const [accounts, setAccounts] = useState<FinancialAccountRecord[]>([])
   const [mutations, setMutations] = useState<AccountMutation[]>([])
 
@@ -272,7 +272,7 @@ export default function FinancePage() {
     setEditAcc(acc)
     setEditName(acc.name)
     setEditType(acc.type)
-    setEditBalance(formatInput(String(acc.balance)))
+    setEditBalance(formatValue(acc.balance))
     setEditNumber(acc.cardNumber)
     setEditHolder(acc.cardHolder)
     setEditDesign(acc.cardDesignType)

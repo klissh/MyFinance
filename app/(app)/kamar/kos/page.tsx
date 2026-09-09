@@ -95,7 +95,7 @@ export interface SharedTransaction {
 }
 
 export default function TransaksiKosPage() {
-  const { fmt, formatInput, parseInput, symbol } = useMoney()
+  const { fmt, formatInput, formatValue, parseInput, symbol } = useMoney()
   // Anggota kamar diambil dari data kamar yang sebenarnya (tabel room_members).
   const [members, setMembers] = useState<KamarMemberRecord[]>([])
   const [accounts, setAccounts] = useState<FinancialAccountRecord[]>([])
@@ -244,7 +244,7 @@ export default function TransaksiKosPage() {
     setEditTx(tx)
     setEditTitle(tx.title)
     setEditCategory(tx.category)
-    setEditTotal(formatInput(String(tx.totalAmount)))
+    setEditTotal(formatValue(tx.totalAmount))
     setEditMemberIds(
       tx.splitUserIds && tx.splitUserIds.length > 0
         ? tx.splitUserIds

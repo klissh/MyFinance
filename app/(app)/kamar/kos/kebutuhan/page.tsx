@@ -95,7 +95,7 @@ interface KosRoutineRequirement {
 }
 
 export default function KebutuhanBulananKosPage() {
-  const { fmt, formatInput, parseInput, symbol } = useMoney()
+  const { fmt, formatInput, formatValue, parseInput, symbol } = useMoney()
   // Notification Toast
   const [notification, setNotification] = useState<string | null>(null)
   const showNotification = (msg: string) => {
@@ -174,7 +174,7 @@ export default function KebutuhanBulananKosPage() {
     setEditReq(r)
     setEditTitle(r.title)
     setEditCategory(r.category)
-    setEditTotal(formatInput(String(r.totalPrice)))
+    setEditTotal(formatValue(r.totalPrice))
     setEditSplitCount(String(r.splitPeopleCount))
     setEditDueDate(r.dueDate)
     setEditResponsible(r.responsiblePerson)

@@ -73,7 +73,7 @@ import {
 } from "@/lib/db"
 
 export default function GoalsPage() {
-  const { fmt, formatInput, parseInput, symbol } = useMoney()
+  const { fmt, formatInput, formatValue, parseInput, symbol } = useMoney()
   const [goals, setGoals] = useState<GoalRecord[]>([])
   const [transactions, setTransactions] = useState<TransactionRecord[]>([])
 
@@ -192,7 +192,7 @@ export default function GoalsPage() {
     setEditGoal(g)
     setEditTitle(g.title)
     setEditCategory(g.category)
-    setEditTarget(formatInput(String(g.targetAmount)))
+    setEditTarget(formatValue(g.targetAmount))
     setEditDeadline(g.deadline)
   }
 

@@ -84,7 +84,7 @@ import {
 } from "lucide-react"
 
 export default function ScheduledPage() {
-  const { fmt, formatInput, parseInput, symbol } = useMoney()
+  const { fmt, formatInput, formatValue, parseInput, symbol } = useMoney()
   const [calendarTransactions, setCalendarTransactions] = useState<CalendarTransaction[]>([])
   const [scheduledBills, setScheduledBills] = useState<ScheduledBillRecord[]>([])
   const [accounts, setAccounts] = useState<FinancialAccountRecord[]>([])
@@ -217,7 +217,7 @@ export default function ScheduledPage() {
   const openEdit = (b: ScheduledBillRecord) => {
     setEditBill(b)
     setEditTitle(b.title)
-    setEditAmount(formatInput(String(b.amount)))
+    setEditAmount(formatValue(b.amount))
     setEditCategory(b.category)
     setEditAccount(b.account)
     const d = new Date(b.date)

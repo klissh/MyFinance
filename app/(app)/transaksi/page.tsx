@@ -105,7 +105,7 @@ export interface TransactionItem {
 }
 
 export default function TransaksiPage() {
-  const { fmt, formatInput, parseInput, symbol } = useMoney()
+  const { fmt, formatInput, formatValue, parseInput, symbol } = useMoney()
   // Mock Initial Transactions State
   const [transactions, setTransactions] = useState<TransactionItem[]>([])
   const [accounts, setAccounts] = useState<FinancialAccountRecord[]>([])
@@ -239,7 +239,7 @@ export default function TransaksiPage() {
   const openEdit = (tx: TransactionItem) => {
     setEditTx(tx)
     setEditTitle(tx.title)
-    setEditAmount(formatInput(String(tx.amount)))
+    setEditAmount(formatValue(tx.amount))
     setEditType(tx.type)
     setEditCategory(tx.category)
     setEditAccount(tx.account)

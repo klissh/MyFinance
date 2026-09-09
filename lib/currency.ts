@@ -39,12 +39,13 @@ export function currencySymbol(c: Currency = getCurrency()): string {
   return CONFIG[c].symbol
 }
 
-/** Format nominal → "RM 1,250.50" / "Rp 1.250". Desimal hanya muncul bila ada. */
+/** Format nominal → "RM 1,250.50" / "Rp 1.250". RM selalu 2 desimal (gaya
+ *  Malaysia); Rp tanpa desimal. */
 export function formatMoney(amount: number, c: Currency = getCurrency()): string {
   const { symbol, locale, maxDecimals } = CONFIG[c]
   const n = Number.isFinite(amount) ? amount : 0
   return `${symbol} ${n.toLocaleString(locale, {
-    minimumFractionDigits: 0,
+    minimumFractionDigits: c === "MYR" ? 2 : 0,
     maximumFractionDigits: maxDecimals,
   })}`
 }
@@ -64,27 +65,48 @@ export function formatMoneyShort(amount: number, c: Currency = getCurrency()): s
 }
 
 /**
- * Format teks yang diketik user di kolom nominal.
- *  IDR → hanya digit, ribuan pakai titik ("1.250.000")
- *  MYR → boleh 1 titik desimal (maks 2 angka), ribuan pakai koma ("1,250.50")
+ * Format teks yang SEDANG diketik user di kolom nominal (dipanggil tiap keystroke).
+ *
+ *  IDR → hanya digit, ribuan pakai titik ("1.250.000"). Tanpa sen.
+ *  MYR → entri gaya bank/e-wallet Malaysia: user mengetik digit dan 2 angka
+ *        paling belakang otomatis jadi sen — titik desimal disisipkan sendiri,
+ *        tidak perlu (dan tidak bisa) diketik.
+ *          ""       → ""
+ *          "1"      → "0.01"
+ *          "125"    → "1.25"
+ *          "12550"  → "125.50"
+ *          "1250000"→ "12,500.00"
+ *        Backspace menghapus digit paling kanan (nilai bergeser), persis seperti
+ *        Maybank / Touch 'n Go / GXBank.
  */
 export function formatAmountInput(raw: string, c: Currency = getCurrency()): string {
   if (c === "IDR") {
     const digits = raw.replace(/\D/g, "")
     return digits ? Number(digits).toLocaleString("id-ID") : ""
   }
-  let s = raw.replace(/[^\d.]/g, "")
-  const firstDot = s.indexOf(".")
-  if (firstDot !== -1) {
-    s = s.slice(0, firstDot + 1) + s.slice(firstDot + 1).replace(/\./g, "")
-  }
-  const [intPart, decPart] = s.split(".")
-  const intFmt = intPart ? Number(intPart).toLocaleString("en-US") : ""
-  if (decPart === undefined) return intFmt
-  return `${intFmt || "0"}.${decPart.slice(0, 2)}`
+  const digits = raw.replace(/\D/g, "").replace(/^0+/, "").slice(0, 14)
+  if (!digits) return ""
+  const value = Number(digits) / 100
+  return value.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
 }
 
-/** Kebalikan `formatAmountInput` → angka. */
+/**
+ * Format ANGKA yang sudah diketahui (mis. nilai lama saat membuka dialog "Ubah")
+ * menjadi isi kolom input. Beda dari `formatAmountInput` yang memproses ketikan
+ * mentah: di sini nilainya sudah pasti, jadi tinggal dirapikan. MYR selalu 2
+ * desimal supaya digit-nya tetap konsisten kalau user lanjut mengetik gaya sen
+ * ("1,250.50" → digit "125050" → 125050 sen → RM 1.250,50).
+ */
+export function formatAmountValue(amount: number, c: Currency = getCurrency()): string {
+  const n = Number.isFinite(amount) ? amount : 0
+  if (c === "IDR") return Math.round(n).toLocaleString("id-ID")
+  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+/** Kebalikan `formatAmountInput`/`formatAmountValue` → angka. */
 export function parseAmountInput(formatted: string, c: Currency = getCurrency()): number {
   if (c === "IDR") return parseInt(formatted.replace(/\D/g, ""), 10) || 0
   const n = parseFloat(formatted.replace(/,/g, ""))
@@ -116,6 +138,8 @@ export function useMoney() {
     fmt: (n: number) => formatMoney(n, currency),
     fmtShort: (n: number) => formatMoneyShort(n, currency),
     formatInput: (raw: string) => formatAmountInput(raw, currency),
+    /** Untuk mengisi kolom input dari nilai yang sudah ada (dialog "Ubah"). */
+    formatValue: (n: number) => formatAmountValue(n, currency),
     parseInput: (formatted: string) => parseAmountInput(formatted, currency),
     setCurrency,
   }

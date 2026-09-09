@@ -47,7 +47,7 @@ export default function BuatKamarBaruPage() {
   // Form State: Buat Kamar
   const [createRoomName, setCreateRoomName] = useState("")
   const [createLocation, setCreateLocation] = useState("")
-  const [createMonthlyFee, setCreateMonthlyFee] = useState("200000")
+  const [createMonthlyFee, setCreateMonthlyFee] = useState("")
   const [createMaxMembers, setCreateMaxMembers] = useState("4")
   const [isSubmittingCreate, setIsSubmittingCreate] = useState(false)
 
@@ -184,7 +184,8 @@ export default function BuatKamarBaruPage() {
                   <label className="text-xs font-semibold text-muted-foreground">Iuran Bulanan ({symbol})</label>
                   <Input
                     type="text"
-                    placeholder="200.000"
+                    inputMode="numeric"
+                    placeholder={symbol === "RM" ? "500.00" : "200.000"}
                     value={createMonthlyFee}
                     onChange={(e) => setCreateMonthlyFee(formatNumberWithDots(e.target.value))}
                     required

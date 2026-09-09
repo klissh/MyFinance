@@ -120,9 +120,22 @@ export default function PengaturanPage() {
                 )
               })}
             </div>
-            <div className="p-3 rounded-lg bg-muted/40 border border-border text-xs text-muted-foreground">
-              Contoh tampilan: <strong className="text-foreground">{fmt(1250.5)}</strong> ·{" "}
-              <strong className="text-foreground">{fmt(50000)}</strong>
+            <div className="p-3 rounded-lg bg-muted/40 border border-border text-xs text-muted-foreground space-y-1">
+              <div>
+                Contoh tampilan: <strong className="text-foreground">{fmt(1250.5)}</strong> ·{" "}
+                <strong className="text-foreground">{fmt(50000)}</strong>
+              </div>
+              {currency === "MYR" ? (
+                <div>
+                  Cara ketik nominal: gaya bank Malaysia — 2 angka terakhir otomatis
+                  jadi sen. Ketik <strong className="text-foreground">1000</strong> →{" "}
+                  <strong className="text-foreground">RM 10.00</strong>, ketik{" "}
+                  <strong className="text-foreground">125050</strong> →{" "}
+                  <strong className="text-foreground">RM 1,250.50</strong>.
+                </div>
+              ) : (
+                <div>Cara ketik nominal: angka bulat, titik ribuan otomatis.</div>
+              )}
             </div>
           </CardContent>
         </Card>
