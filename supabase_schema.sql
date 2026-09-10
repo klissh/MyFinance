@@ -51,7 +51,9 @@ CREATE TABLE IF NOT EXISTS public.accounts (
     name TEXT NOT NULL,              -- e.g. "Bank BCA", "Tunai / Cash"
     type TEXT NOT NULL DEFAULT 'utama', -- 'utama', 'tabungan', 'dompet', 'digital'
     balance NUMERIC(15, 2) NOT NULL DEFAULT 0.00,
-    color TEXT DEFAULT 'primary',
+    color TEXT DEFAULT 'primary',   -- menyimpan cardDesignType di app
+    -- Ditambahkan migrasi 20260909160106 (add_accounts_card_network):
+    card_network TEXT NOT NULL DEFAULT 'mastercard', -- visa|mastercard|amex|unionpay|jcb|other|none
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -327,6 +329,161 @@ CREATE POLICY "Room members can view requirements" ON public.room_requirements F
 CREATE POLICY "Room members can insert requirements" ON public.room_requirements FOR INSERT TO authenticated WITH CHECK (true);
 CREATE POLICY "Room members can view requirement payments" ON public.room_requirement_payments FOR SELECT TO authenticated USING (true);
 CREATE POLICY "Users can record their requirement payment" ON public.room_requirement_payments FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
+
+-- ====================================================================
+-- 16. MIGRASI TAMBAHAN (diterapkan ke project MSU setelah skema awal)
+-- ====================================================================
+-- File ini ADALAH cerminan state live (project ref uscpfhubuughdjutrzez).
+-- Migrasi yang sudah diterapkan, berurutan:
+--   20260908073710  initial_schema_from_repo               (bagian 1-15 di atas)
+--   20260908074112  harden_functions_search_path_and_execute
+--   20260908074135  revoke_execute_from_public
+--   20260908115332  add_missing_room_split_rls_policies     (di bawah)
+--   20260909063342  add_edit_delete_policies_room_entities  (di bawah)
+--   20260909160106  add_accounts_card_network               (kolom di bagian 2)
+
+-- --- 20260908074112 + 20260908074135: hardening fungsi -----------------
+ALTER FUNCTION public.handle_new_user() SET search_path = '';
+ALTER FUNCTION public.update_timestamp() SET search_path = '';
+REVOKE EXECUTE ON FUNCTION public.handle_new_user() FROM anon, authenticated, PUBLIC;
+
+-- --- 20260908115332: RLS yang hilang untuk split bill -----------------
+-- room_transaction_splits tidak punya INSERT policy → baris split tak pernah
+-- bisa dibuat dari client. Izinkan pembuat transaksi induk meng-insert.
+CREATE POLICY "Tx creator can insert splits"
+ON public.room_transaction_splits FOR INSERT TO authenticated
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM public.room_transactions t
+    WHERE t.id = transaction_id AND t.created_by = auth.uid()
+  )
+);
+
+-- room_transactions tidak punya UPDATE policy → status tak pernah bisa jadi
+-- 'settled'. Izinkan pembuat atau penalang meng-update.
+CREATE POLICY "Creator or payer can update room transactions"
+ON public.room_transactions FOR UPDATE TO authenticated
+USING (auth.uid() = created_by OR auth.uid() = paid_by_user_id)
+WITH CHECK (auth.uid() = created_by OR auth.uid() = paid_by_user_id);
+
+-- --- 20260909063342: tombol Edit & Hapus di semua entitas kamar -------
+CREATE POLICY "Creator can delete room transactions"
+ON public.room_transactions FOR DELETE TO authenticated
+USING (auth.uid() = created_by);
+
+CREATE POLICY "Tx creator can delete splits"
+ON public.room_transaction_splits FOR DELETE TO authenticated
+USING (EXISTS (
+  SELECT 1 FROM public.room_transactions t
+  WHERE t.id = transaction_id AND t.created_by = auth.uid()
+));
+
+CREATE POLICY "Room members can update requirements"
+ON public.room_requirements FOR UPDATE TO authenticated
+USING (EXISTS (
+  SELECT 1 FROM public.room_members m
+  WHERE m.room_id = room_requirements.room_id AND m.user_id = auth.uid()
+))
+WITH CHECK (EXISTS (
+  SELECT 1 FROM public.room_members m
+  WHERE m.room_id = room_requirements.room_id AND m.user_id = auth.uid()
+));
+
+CREATE POLICY "Room members can delete requirements"
+ON public.room_requirements FOR DELETE TO authenticated
+USING (EXISTS (
+  SELECT 1 FROM public.room_members m
+  WHERE m.room_id = room_requirements.room_id AND m.user_id = auth.uid()
+));
+
+CREATE POLICY "Ketua Kos can remove members"
+ON public.room_members FOR DELETE TO authenticated
+USING (EXISTS (
+  SELECT 1 FROM public.room_members me
+  WHERE me.room_id = room_members.room_id
+    AND me.user_id = auth.uid()
+    AND me.role = 'Ketua Kos'
+));
+
+-- ====================================================================
+-- 17. SPLIT PER ITEM / SCAN STRUK
+--     Migrasi: 20260910... add_room_transaction_items_split_per_item
+-- ====================================================================
+-- Satu struk belanja bersama bisa punya banyak "kelompok pembagi" berbeda
+-- per item (mis. lauk dibagi 4 orang, beras & sabun dibagi 7 orang).
+
+CREATE TABLE IF NOT EXISTS public.room_transaction_items (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    transaction_id UUID NOT NULL REFERENCES public.room_transactions(id) ON DELETE CASCADE,
+    item_name TEXT NOT NULL,
+    quantity NUMERIC(10,2) DEFAULT 1,
+    unit_price NUMERIC(15,2),
+    item_total NUMERIC(15,2) NOT NULL,
+    source TEXT NOT NULL DEFAULT 'manual' CHECK (source IN ('scan','manual')),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.room_transaction_item_splits (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    item_id UUID NOT NULL REFERENCES public.room_transaction_items(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    share_amount NUMERIC(15,2) NOT NULL,
+    UNIQUE(item_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_rti_transaction ON public.room_transaction_items(transaction_id);
+CREATE INDEX IF NOT EXISTS idx_rtis_item ON public.room_transaction_item_splits(item_id);
+CREATE INDEX IF NOT EXISTS idx_rtis_user ON public.room_transaction_item_splits(user_id);
+
+ALTER TABLE public.room_transaction_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.room_transaction_item_splits ENABLE ROW LEVEL SECURITY;
+
+-- SELECT untuk anggota kamar; INSERT/UPDATE/DELETE untuk pembuat transaksi induk.
+CREATE POLICY "Room members can view transaction items"
+ON public.room_transaction_items FOR SELECT TO authenticated
+USING (EXISTS (
+  SELECT 1 FROM public.room_transactions t
+  JOIN public.room_members m ON m.room_id = t.room_id
+  WHERE t.id = room_transaction_items.transaction_id AND m.user_id = (SELECT auth.uid())
+));
+CREATE POLICY "Tx creator can write transaction items"
+ON public.room_transaction_items FOR ALL TO authenticated
+USING (EXISTS (SELECT 1 FROM public.room_transactions t
+  WHERE t.id = room_transaction_items.transaction_id AND t.created_by = (SELECT auth.uid())))
+WITH CHECK (EXISTS (SELECT 1 FROM public.room_transactions t
+  WHERE t.id = room_transaction_items.transaction_id AND t.created_by = (SELECT auth.uid())));
+
+CREATE POLICY "Room members can view item splits"
+ON public.room_transaction_item_splits FOR SELECT TO authenticated
+USING (EXISTS (
+  SELECT 1 FROM public.room_transaction_items i
+  JOIN public.room_transactions t ON t.id = i.transaction_id
+  JOIN public.room_members m ON m.room_id = t.room_id
+  WHERE i.id = room_transaction_item_splits.item_id AND m.user_id = (SELECT auth.uid())
+));
+CREATE POLICY "Tx creator can write item splits"
+ON public.room_transaction_item_splits FOR ALL TO authenticated
+USING (EXISTS (SELECT 1 FROM public.room_transaction_items i
+  JOIN public.room_transactions t ON t.id = i.transaction_id
+  WHERE i.id = room_transaction_item_splits.item_id AND t.created_by = (SELECT auth.uid())))
+WITH CHECK (EXISTS (SELECT 1 FROM public.room_transaction_items i
+  JOIN public.room_transactions t ON t.id = i.transaction_id
+  WHERE i.id = room_transaction_item_splits.item_id AND t.created_by = (SELECT auth.uid())));
+
+-- RPC atomik `public.create_room_transaction_with_items(p_room_id, p_paid_by_user_id,
+--   p_title, p_category, p_total_amount, p_date, p_items jsonb) RETURNS uuid`
+-- Body lengkap ada di migrasi `add_room_transaction_items_split_per_item`
+-- (tarik dengan: supabase db pull, atau lihat dashboard).
+--   - Transaksi induk + tiap item + split per item + agregat ke
+--     room_transaction_splits, semua dalam 1 transaksi DB.
+--   - SECURITY DEFINER + SET search_path=''; validasi caller = anggota kamar
+--     dan semua member_ids = anggota kamar.
+--   - Advisor "authenticated_security_definer_function_executable" = SENGAJA
+--     (pola RPC transaksional yang memang dipanggil user; auth dicek di dalam).
+--   - p_items: [{ item_name, quantity, unit_price, item_total, source,
+--                 member_ids: [uuid,...] }, ...]
+--   - Selisih (total - sum item_total) dibagi RATA ke peserta struk (union member_ids).
+--   - EXECUTE dicabut dari anon/public, di-grant ke authenticated.
 
 -- ====================================================================
 -- END OF SCHEMA

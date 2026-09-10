@@ -1,6 +1,7 @@
 "use client"
 
 import { useMoney } from "@/lib/currency"
+import { useRouter } from "next/navigation"
 import React, { useState, useEffect, useCallback } from "react"
 import { kamarService, accountService, KamarMemberRecord, FinancialAccountRecord } from "@/lib/db"
 import {
@@ -73,6 +74,7 @@ import {
   ArrowRight,
   Pencil,
   Trash2,
+  ScanLine,
 } from "lucide-react"
 
 export interface SharedTransaction {
@@ -90,9 +92,11 @@ export interface SharedTransaction {
   date: string
   formattedDate: string
   status: "settled" | "pending"
+  isItemized?: boolean
 }
 
 export default function TransaksiKosPage() {
+  const router = useRouter()
   const { fmt, formatInput, formatValue, parseInput, symbol, zero } = useMoney()
   // Anggota kamar diambil dari data kamar yang sebenarnya (tabel room_members).
   const [members, setMembers] = useState<KamarMemberRecord[]>([])
@@ -134,6 +138,17 @@ export default function TransaksiKosPage() {
   }, [])
 
   useEffect(() => {
+    let scanToast: ReturnType<typeof setTimeout> | undefined
+    if (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("scan") === "ok") {
+      window.history.replaceState(null, "", "/kamar/kos")
+      scanToast = setTimeout(
+        () =>
+          showNotification(
+            "Split bill dari struk berhasil disimpan. Bagianmu otomatis tercatat di transaksi pribadi.",
+          ),
+        0,
+      )
+    }
     async function load() {
       const room = kamarService.getUserRoom()
       // Selaraskan dampak split bill ke transaksi pribadi lebih dulu.
@@ -157,6 +172,9 @@ export default function TransaksiKosPage() {
       await reloadTransactions()
     }
     load()
+    return () => {
+      if (scanToast) clearTimeout(scanToast)
+    }
   }, [reloadTransactions])
 
   const memberKey = (m: KamarMemberRecord) => m.userId || m.id
@@ -483,11 +501,20 @@ export default function TransaksiKosPage() {
               </CardDescription>
             </div>
 
-            {/* Catat Transaksi Button (MOVED FROM HEADER TO SECTION) */}
+            {/* Aksi: cepat (rata) + scan struk (per item) */}
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <Button
+              size="sm"
+              variant="outline"
+              className="shadow-none text-xs"
+              onClick={() => router.push("/kamar/kos/scan")}
+            >
+              <ScanLine className="size-4 mr-1.5" /> Scan Struk / Per Item
+            </Button>
             <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
               <DialogTrigger asChild>
-                <Button size="sm" className="shadow-none text-xs shrink-0">
-                  <Plus className="size-4 mr-1.5" /> Catat Transaksi / Talangan Kos
+                <Button size="sm" className="shadow-none text-xs">
+                  <Plus className="size-4 mr-1.5" /> Catat Cepat (Rata)
                 </Button>
               </DialogTrigger>
               <DialogContent className="sm:max-w-md shadow-none border">
@@ -638,6 +665,7 @@ export default function TransaksiKosPage() {
                 </form>
               </DialogContent>
             </Dialog>
+            </div>
           </div>
 
           {/* Table Filter Controls Bar */}
@@ -732,7 +760,9 @@ export default function TransaksiKosPage() {
                           </Badge>
                           <span aria-hidden>·</span>
                           <span>
-                            {fmt(tx.totalAmount)} ÷ {tx.splitBetween.length}
+                            {tx.isItemized
+                              ? `${fmt(tx.totalAmount)} · per item`
+                              : `${fmt(tx.totalAmount)} ÷ ${tx.splitBetween.length}`}
                           </span>
                         </ListCardMeta>
                         <div className="mt-1 truncate text-[11px] text-muted-foreground">{allMembers}</div>
@@ -767,8 +797,13 @@ export default function TransaksiKosPage() {
                           <TableCell className="px-3.5 py-3 text-xs font-medium text-muted-foreground whitespace-nowrap">
                             {tx.formattedDate}
                           </TableCell>
-                          <TableCell className="max-w-[200px] truncate px-3.5 py-3 text-xs font-semibold">
-                            {tx.title}
+                          <TableCell className="max-w-[200px] px-3.5 py-3 text-xs font-semibold">
+                            <span className="block truncate">{tx.title}</span>
+                            {tx.isItemized && (
+                              <Badge className="mt-0.5 border-none bg-primary/10 px-1.5 py-0 text-[9px] font-semibold text-primary">
+                                per item
+                              </Badge>
+                            )}
                           </TableCell>
                           <TableCell className="px-3.5 py-3 whitespace-nowrap">
                             <Badge variant="outline" className="border-border px-2 py-0 text-[11px] font-normal">
@@ -780,14 +815,16 @@ export default function TransaksiKosPage() {
                             {members.find((m) => m.isMe)?.name === tx.paidBy ? " (Saya)" : ""}
                           </TableCell>
                           <TableCell className="max-w-[160px] truncate px-3.5 py-3 text-xs text-muted-foreground">
-                            {members.length > 0 && tx.splitBetween.length >= members.length
-                              ? `Semua Anggota (${members.length})`
-                              : tx.splitBetween.join(", ")}
+                            {tx.isItemized
+                              ? "Per item (beda kelompok)"
+                              : members.length > 0 && tx.splitBetween.length >= members.length
+                                ? `Semua Anggota (${members.length})`
+                                : tx.splitBetween.join(", ")}
                           </TableCell>
                           <TableCell className="px-3.5 py-3 text-xs font-bold text-foreground whitespace-nowrap">
                             {fmt(tx.totalAmount)}
                             <span className="block text-[10px] font-normal text-muted-foreground">
-                              ÷ {tx.splitBetween.length} orang
+                              {tx.isItemized ? "rincian per item" : `÷ ${tx.splitBetween.length} orang`}
                             </span>
                           </TableCell>
                           <TableCell className="px-3.5 py-3 text-right text-xs whitespace-nowrap">{shareCell(tx)}</TableCell>

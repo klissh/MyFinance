@@ -21,7 +21,9 @@ Ada DUA organisasi Supabase yang relevan ke proyek ini:
 - **MSU** — organisasi kita sendiri. Project `managemymoney` (ref `uscpfhubuughdjutrzez`) adalah target baru dengan status berikut:
   - Skema lengkap (13 tabel: `profiles`, `accounts`, `categories`, `transactions`, `goals`, `saving_logs`, `scheduled_payments`, `rooms`, `room_members`, `room_transactions`, `room_transaction_splits`, `room_requirements`, `room_requirement_payments`) sudah diterapkan dari `supabase_schema.sql`, Row Level Security aktif di semua tabel.
   - 4 temuan security advisor sudah diperbaiki: `search_path` dikunci di fungsi `handle_new_user` & `update_timestamp`, izin `EXECUTE` publik pada `handle_new_user` sudah dicabut dari `anon`/`authenticated`/`PUBLIC`.
-  - Datanya masih **kosong total** — migrasi data dari Bizmo belum terjadi, masih menunggu file ekspor (SQL/CSV) dari pemilik Bizmo atau akses member ke organisasi itu. **Ini pekerjaan manusia, jangan dicoba otomatis.**
+  - Migrasi data dari Bizmo belum terjadi, masih menunggu file ekspor (SQL/CSV) dari pemilik Bizmo atau akses member ke organisasi itu. **Ini pekerjaan manusia, jangan dicoba otomatis.**
+  - Per 2026-09-10 sudah ada **data uji coba** (bukan lagi kosong total): `profiles` 2, `accounts` 2, `transactions` 2, `goals` 1, `saving_logs` 1. Tabel `room_*` masih kosong.
+  - 6 migrasi terpasang: `initial_schema_from_repo`, `harden_functions_search_path_and_execute`, `revoke_execute_from_public`, `add_missing_room_split_rls_policies`, `add_edit_delete_policies_room_entities`, `add_accounts_card_network`. **`supabase_schema.sql` sudah disinkronkan** dengan keenam migrasi ini (lihat bagian 16 file itu) — jadi file itu kembali jadi cerminan live yang akurat.
 
 `.env.local` atau `.env` (keduanya dibaca Next, keduanya kena `.gitignore`) harus diisi `NEXT_PUBLIC_SUPABASE_URL` dan `NEXT_PUBLIC_SUPABASE_ANON_KEY` yang menunjuk ke project MSU di atas. Saat ini kredensial ada di `.env`. Jangan pernah menaruh kredensial apa pun (Supabase key, GitHub token, dll) ke file yang ter-commit ke git, termasuk file ini.
 
@@ -307,6 +309,96 @@ warna-warni di kartu metrik), `font-extrabold`/`tracking-tight` berlebihan.
   `bg-card border` + centang hijau kecil.
 - Global di semua `app/(app)/*/page.tsx`: hapus `tracking-tight`,
   `font-extrabold`→`font-semibold`, hapus `min-h-screen` dari div konten.
+
+## Ronde 12 (2026-09-10) — notebook training LayoutLMv3 + rencana fitur scan struk
+
+Pekerjaan dari `spec-notebook-training-layoutlmv3.md` & `spec-fitur-scan-struk.md`.
+
+- **`notebooks/layoutlmv3-cord-v2-finetuning.ipynb`** (baru) — notebook Kaggle
+  fine-tune `microsoft/layoutlmv3-base` di `naver-clova-ix/cord-v2` untuk BAB IV
+  skripsi. 28 sel. Mengikuti spec: instalasi terpinning (`transformers==4.41.2`,
+  `accelerate==0.34.2`, `datasets==3.6.0`, tanpa `seqeval`/`peft`), test split
+  disisihkan total (evaluasi resmi 1x di Bagian 7), kosakata label dari gabungan
+  train+val+test, dedup image-hash lintas split, metrik BIO span manual, demo
+  inferensi EasyOCR (bukan Tesseract). Tidak terkait kode app — berdiri sendiri.
+- **Model terlatih di-host:** [`Klissh/layoutlmv3-cord-v2`](https://huggingface.co/Klissh/layoutlmv3-cord-v2)
+  (HF model repo publik, 507 MB, sudah di-upload). Repo model gratis; **HF Space
+  Docker TIDAK gratis lagi** (butuh PRO $9/bln — kebijakan baru HF: hanya Static
+  Space yang gratis).
+- **Layanan inferensi scan struk → Modal.com** (bukan HF Space). File:
+  - **`inference/modal_app.py`** — Modal serverless CPU (2 vCPU/4 GB),
+    `min_containers=0` (scale-to-zero, ~$0/bln untuk 7 orang), FastAPI di-serve
+    dari `@app.cls` + `@modal.enter` (model dimuat sekali/kontainer),
+    `@modal.concurrent(max_inputs=1)`. Endpoint **sinkron** `POST /scan`
+    (multipart) + `GET /health`. Pipeline: EasyOCR (downscale 1600px,
+    `batch_size=16`) → LayoutLMv3 → rekonstruksi item + ringkasan + `raw_words`.
+    Belum di-deploy (nunggu user buat akun Modal + token).
+  - **`inference/README.md`** — cara deploy + kontrak API + estimasi biaya.
+  - **`hf-space/`** — versi Docker (`Dockerfile` + `app.py` FastAPI async
+    job-poll) — **alternatif** kalau nanti pindah ke Cloud Run / HF PRO / VM.
+  - `SCAN_API_KEY` = `BI-1GHdBpqAFWodET4_aPvXOIBjwZ6Rk` (di scratchpad sesi;
+    dipakai app Next auth ke `/scan`). Regenerate untuk produksi nyata.
+- **`spec-fitur-scan-struk.md` — Bagian 0 sudah USANG.** Ketiga "bug kritis" yang
+  disebut spec (splits tak diisi, baca `split_between`, `myShare` tak cek
+  keanggotaan) **sudah diperbaiki** sejak Ronde 2-3. `lib/db.ts` sekarang:
+  `addSharedTransaction` insert `room_transaction_splits`; `getSharedTransactions`
+  baca embed `room_transaction_splits(*)`; `myShare` diturunkan dari baris split
+  milik user. Yang tersisa dari spec = fitur **split per item** (tabel baru
+  `room_transaction_items` + `room_transaction_item_splits`, RPC atomik, mode UI
+  baru di `kamar/kos`). Keputusan user: selisih pajak/diskon dibagi **rata ke
+  peserta struk itu saja** (bukan proporsi belanja, bukan seluruh 7 anggota).
+  **Fitur Next belum diimplementasikan** — nunggu layanan inferensi live dulu.
+
+## Ronde 13 (2026-09-10) — fitur scan struk + split per item
+
+Layanan inferensi **live di Modal** (bukan HF Space — Docker Space kena PRO wall):
+`https://klissh--managemymoney-scan-struk-scanservice-web.modal.run`
+(`inference/modal_app.py`, scale-to-zero, `SCAN_API_KEY` = Modal secret `scan-struk`).
+Timing terukur: LayoutLMv3 ~1.2s konstan, EasyOCR 3–13s, total warm ~5–15s,
+cold start +15–25s sekali. Kualitas OCR belum diuji dengan foto struk asli.
+
+**Migrasi `add_room_transaction_items_split_per_item`** (diterapkan + diverifikasi
+via DO-block rollback):
+- Tabel `room_transaction_items` (item_name, quantity, unit_price, item_total,
+  source scan|manual) + `room_transaction_item_splits` (item_id, user_id,
+  share_amount, UNIQUE(item_id,user_id)). RLS: SELECT anggota kamar; write
+  pembuat transaksi induk.
+- RPC `create_room_transaction_with_items(p_room_id, p_paid_by_user_id, p_title,
+  p_category, p_total_amount, p_date, p_items jsonb) RETURNS uuid` — SECURITY
+  DEFINER, `search_path=''`, atomik: room_transactions + tiap item + item_splits
+  + agregat ke `room_transaction_splits` (baris penalang `is_settled=true`).
+  **Selisih (total − Σ item_total) dibagi RATA ke peserta struk** (union
+  member_ids), lalu sisa pembulatan ditaruh di tanggungan terbesar. Advisor
+  "authenticated_security_definer_function_executable" = SENGAJA (validasi auth
+  di dalam: caller & semua member_ids harus anggota kamar).
+
+**Kode:**
+- `.env`: `SCAN_STRUK_URL`, `SCAN_STRUK_API_KEY` (server-only).
+- `app/api/scan-struk/route.ts` — proxy server-side ke Modal (key tak bocor ke
+  browser; wajib login; timeout 55s).
+- `lib/scan-struk.ts` — `scanReceipt()`, `resultToRows()`, `computeOwed()`
+  (preview split HARUS cocok dengan RPC).
+- `lib/db.ts`: `RoomItemInput`/`RoomTransactionItemRecord`,
+  `kamarService.addSharedTransactionWithItems()` (panggil RPC + reconcile),
+  `getTransactionItems()`. `SharedTransactionRecord.isItemized`.
+  `updateSharedTransaction` menolak edit struktural bila transaksi itemized.
+  `getSharedTransactions` embed `room_transaction_items(id)` → `isItemized`.
+- `app/(app)/kamar/kos/scan/page.tsx` (baru) — layar review: info transaksi +
+  kelompok default, daftar item (edit inline nama/qty/harga/subtotal + checkbox
+  + badge status), tombol "Bagi ke…" batch (`assignGroupToItems`), ringkasan
+  per anggota real-time, submit terkunci sampai semua item dibagi.
+- `kamar/kos/page.tsx`: tombol "Scan Struk / Per Item" → `/kamar/kos/scan`;
+  "Catat Transaksi" → "Catat Cepat (Rata)"; badge "per item" di tabel/kartu;
+  toast `?scan=ok`.
+
+typecheck + lint + `next build` lolos. **Belum diuji end-to-end di browser**
+(butuh 2+ akun + kamar + foto struk asli). Mode "cepat/rata" lama tak berubah.
+
+### Sisa / belum dikerjakan
+- Edit rincian item transaksi itemized yang sudah tersimpan (v1: hapus + buat ulang).
+- Kualitas OCR pada foto struk Indonesia asli — perlu tuning param
+  (`OCR_*` env di Modal secret) setelah lihat data nyata.
+- Gambar struk tidak disimpan (tak ada Supabase Storage) — hanya hasil parse.
 
 ## Yang TIDAK perlu dikerjakan otomatis
 

@@ -1,0 +1,11 @@
+# torch + torchvision (CPU) dipasang terpisah di Dockerfile lewat index PyTorch.
+numpy<2
+Pillow<11
+fastapi<0.116
+uvicorn[standard]<0.33
+python-multipart<0.1
+transformers==4.41.2
+tokenizers<0.20
+huggingface_hub>=0.23,<1.0
+safetensors<0.5
+easyocr==1.7.2

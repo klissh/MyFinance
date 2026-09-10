@@ -72,6 +72,30 @@ export interface SharedTransactionRecord {
   date: string
   formattedDate: string
   status: "settled" | "pending"
+  /** true = dibuat lewat "scan struk / split per item" (punya baris room_transaction_items). */
+  isItemized?: boolean
+}
+
+/** Satu baris item di dalam struk belanja bersama (split per item). */
+export interface RoomItemInput {
+  itemName: string
+  quantity: number
+  unitPrice?: number | null
+  itemTotal: number
+  source: "scan" | "manual"
+  /** user_id anggota kamar yang menanggung item ini. */
+  memberIds: string[]
+}
+
+export interface RoomTransactionItemRecord {
+  id: string
+  itemName: string
+  quantity: number
+  unitPrice: number | null
+  itemTotal: number
+  source: "scan" | "manual"
+  memberIds: string[]
+  perMemberShare: number
 }
 
 export interface RequirementRecord {
@@ -1907,7 +1931,7 @@ export const kamarService = {
       try {
         const { data, error } = await supabase
           .from("room_transactions")
-          .select("*, room_transaction_splits(*)")
+          .select("*, room_transaction_splits(*), room_transaction_items(id)")
           .eq("room_id", room.id)
           .order("date", { ascending: false })
           .order("created_at", { ascending: false })
@@ -1962,6 +1986,7 @@ export const kamarService = {
               status,
               date: t.date,
               formattedDate: formatIdDate(t.date),
+              isItemized: Array.isArray(t.room_transaction_items) && t.room_transaction_items.length > 0,
             }
           })
 
@@ -2104,6 +2129,114 @@ export const kamarService = {
   },
 
   /**
+   * Buat satu split bill kos dengan RINCIAN PER ITEM (scan struk / input manual).
+   * Semua langkah (room_transactions + room_transaction_items +
+   * room_transaction_item_splits + agregat room_transaction_splits) dijalankan
+   * ATOMIK di server lewat RPC `create_room_transaction_with_items` — kalau ada
+   * error di tengah, tidak ada yang setengah tersimpan.
+   *
+   * Selisih (total struk - jumlah semua item_total) dibagi RATA ke peserta struk
+   * (gabungan semua anggota yang menanggung minimal 1 item).
+   */
+  async addSharedTransactionWithItems(input: {
+    title: string
+    category: string
+    totalAmount: number
+    paidByUserId: string
+    date?: string
+    items: RoomItemInput[]
+    /** Akun penalang (hanya dipakai kalau penalang = user saat ini). */
+    payerAccount?: string
+  }): Promise<{ txId: string | null; error: string | null }> {
+    const room = this.getUserRoom()
+    const currentUser = authService.getCurrentUser()
+    const myId = currentUser?.id
+
+    if (!input.items.length) return { txId: null, error: "Tidak ada item." }
+    if (input.items.some((it) => !it.memberIds.length)) {
+      return { txId: null, error: "Masih ada item yang belum dibagi ke siapa pun." }
+    }
+
+    if (
+      !isSupabaseConfigured ||
+      !supabase ||
+      !room?.id ||
+      !room.id.includes("-") ||
+      !myId ||
+      !myId.includes("-") ||
+      !input.paidByUserId.includes("-")
+    ) {
+      return { txId: null, error: "Fitur ini butuh kamar yang tersambung ke server." }
+    }
+
+    try {
+      const { data, error } = await supabase.rpc("create_room_transaction_with_items", {
+        p_room_id: room.id,
+        p_paid_by_user_id: input.paidByUserId,
+        p_title: input.title,
+        p_category: input.category || "Konsumsi Kos",
+        p_total_amount: input.totalAmount,
+        p_date: input.date || todayLocalISO(),
+        p_items: input.items.map((it) => ({
+          item_name: it.itemName,
+          quantity: it.quantity,
+          unit_price: it.unitPrice ?? null,
+          item_total: it.itemTotal,
+          source: it.source,
+          member_ids: it.memberIds.filter((id) => id.includes("-")),
+        })),
+      })
+      if (error) {
+        console.error("create_room_transaction_with_items error:", error)
+        return { txId: null, error: error.message || "Gagal menyimpan split bill." }
+      }
+
+      const txId = data as string
+      if (input.paidByUserId === myId && input.payerAccount) {
+        writeSplitMeta(txId, input.payerAccount)
+      }
+
+      // Segarkan cache & catat pengeluaran "bagian saya" ke transaksi pribadi.
+      await this.getSharedTransactions()
+      await this.reconcileRoomLedger(room.id)
+      return { txId, error: null }
+    } catch (err) {
+      console.warn("addSharedTransactionWithItems exception:", err)
+      return { txId: null, error: "Tidak bisa terhubung ke server." }
+    }
+  },
+
+  /** Rincian item satu split bill (untuk tampilan detail & edit). */
+  async getTransactionItems(txId: string): Promise<RoomTransactionItemRecord[]> {
+    if (!isSupabaseConfigured || !supabase || !txId.includes("-")) return []
+    try {
+      const { data, error } = await supabase
+        .from("room_transaction_items")
+        .select("*, room_transaction_item_splits(user_id, share_amount)")
+        .eq("transaction_id", txId)
+        .order("created_at", { ascending: true })
+      if (error || !data) return []
+      return data.map((it: Record<string, unknown>) => {
+        const splits =
+          (it.room_transaction_item_splits as Array<{ user_id: string; share_amount: number }>) || []
+        return {
+          id: it.id as string,
+          itemName: it.item_name as string,
+          quantity: Number(it.quantity ?? 1),
+          unitPrice: it.unit_price == null ? null : Number(it.unit_price),
+          itemTotal: Number(it.item_total),
+          source: (it.source as "scan" | "manual") || "manual",
+          memberIds: splits.map((s) => s.user_id),
+          perMemberShare: splits.length ? Number(splits[0].share_amount) : 0,
+        }
+      })
+    } catch (err) {
+      console.warn("getTransactionItems exception:", err)
+      return []
+    }
+  },
+
+  /**
    * Tandai bagian SAYA pada satu transaksi talangan sebagai lunas.
    * Pencatatan ke transaksi pribadi dilakukan oleh reconcileRoomLedger().
    */
@@ -2188,7 +2321,7 @@ export const kamarService = {
       try {
         const { data, error: getErr } = await supabase
           .from("room_transactions")
-          .select("paid_by_user_id, total_amount, room_transaction_splits(id, user_id, is_settled)")
+          .select("paid_by_user_id, total_amount, room_transaction_splits(id, user_id, is_settled), room_transaction_items(id)")
           .eq("id", txId)
           .single()
         if (getErr || !data) return { error: "Transaksi tidak ditemukan." }
@@ -2196,6 +2329,14 @@ export const kamarService = {
         const payerId = data.paid_by_user_id as string
         const splits =
           (data.room_transaction_splits as Array<{ id: string; user_id: string; is_settled: boolean }>) || []
+        const isItemized =
+          Array.isArray(data.room_transaction_items) && data.room_transaction_items.length > 0
+        if (structural && isItemized) {
+          return {
+            error:
+              "Split bill per item — total & peserta tidak bisa diubah di sini. Hapus lalu buat ulang, atau ubah hanya judul/kategori.",
+          }
+        }
         const someoneElseSettled = splits.some((s) => s.user_id !== payerId && s.is_settled)
         if (structural && someoneElseSettled) {
           return {

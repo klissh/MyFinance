@@ -34,3 +34,18 @@ pnpm-debug.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# ML model artifacts (jangan commit — besar; deploy lewat HF Hub)
+/notebooks/**/model.safetensors
+/notebooks/**/*.bin
+/notebooks/layoutlmv3-cord-v2-final/
+/notebooks/layoutlmv3-cord-v2/
+*.safetensors
+*.ckpt
+*.pt
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
