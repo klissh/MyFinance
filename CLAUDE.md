@@ -391,8 +391,12 @@ via DO-block rollback):
   "Catat Transaksi" → "Catat Cepat (Rata)"; badge "per item" di tabel/kartu;
   toast `?scan=ok`.
 
-typecheck + lint + `next build` lolos. **Belum diuji end-to-end di browser**
-(butuh 2+ akun + kamar + foto struk asli). Mode "cepat/rata" lama tak berubah.
+typecheck + lint + `next build` lolos. **Sudah di-merge ke `master` & live di
+`mybarudak.vercel.app`** (deploy `a8ddfcb`). Env var `SCAN_STRUK_URL` +
+`SCAN_STRUK_API_KEY` sudah di-set di Vercel project `myfinance` (Production +
+Preview). `/api/scan-struk` terverifikasi balas 401 tanpa login (bukan 503 →
+env OK). **Belum diuji end-to-end dengan user login + foto struk asli.** Mode
+"cepat/rata" lama tak berubah.
 
 ### Sisa / belum dikerjakan
 - Edit rincian item transaksi itemized yang sudah tersimpan (v1: hapus + buat ulang).
