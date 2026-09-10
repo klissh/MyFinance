@@ -197,17 +197,17 @@ def _reconstruct(words, labels):
 @app.cls(
     image=image,
     cpu=2.0,
-    memory=4096,
+    memory=3072,               # cukup untuk torch+easyocr+layoutlmv3 + 1 gambar
     min_containers=0,          # scale-to-zero -> $0 saat idle
     max_containers=2,
-    scaledown_window=600,      # tetap hangat 10 menit setelah request terakhir
+    scaledown_window=90,       # mati 90 detik setelah request terakhir (hemat kredit)
     timeout=300,
-    # enable_memory_snapshot=True,  # aktifkan lagi setelah kode stabil (percepat cold start)
+    enable_memory_snapshot=True,  # snapshot memori -> cold start ~5s, bukan ~25s
     secrets=[modal.Secret.from_name("scan-struk")],
 )
 @modal.concurrent(max_inputs=1)  # 1 struk pada satu waktu per kontainer
 class ScanService:
-    @modal.enter()
+    @modal.enter(snap=True)
     def load(self):
         import torch
         from transformers import LayoutLMv3ForTokenClassification, LayoutLMv3Processor
