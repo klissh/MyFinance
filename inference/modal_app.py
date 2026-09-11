@@ -105,19 +105,42 @@ _SUMMARY_MAP = {
 def _amount_value(text):
     # "12.50" -> 12.5 (desimal RM) ; "1.700" / "60,000" -> 1700 / 60000 (ribuan) ;
     # "Rp 12.000" -> 12000. Heuristik: [.,] + tepat 2 digit di akhir = desimal.
+    #
+    # Ditemukan dari data nyata: field ringkasan berformat "LABEL ANGKA" (mis.
+    # "PB-1 10% 2.818", "TOTAL 31.000") -> ambil kandidat angka PALING BELAKANG,
+    # bukan yang pertama (yang pertama sering nomor kode di label). EasyOCR juga
+    # sering: (a) menyisipkan spasi nyempil di sekitar pemisah desimal
+    # ("28 . 182"), (b) memisah ekor "000" dengan spasi dan membaca sebagian
+    # sebagai huruf o/O ("31 0oo").
     if not text:
         return None
-    text = re.sub(r"(?<=\d)[\s ](?=\d)", "", text)  # "91 000" -> "91000"
-    m = re.search(r"\d[\d.,]*\d|\d", text)
-    if not m:
+    t = re.sub(r"(?<=\d)\s*([.,])\s*(?=\d)", r"\1", text)
+    t = re.sub(r"(?<=\d)\s+(?=[0oO]{2,3}(?:\b|$))", "", t)
+
+    candidates = [m.group(0) for m in re.finditer(r"[\d.,oO]+", t) if re.search(r"\d", m.group(0))]
+    if not candidates:
         return None
-    s = m.group(0)
+    s = re.sub(r"[oO]", "0", candidates[-1])
+
     dec = re.search(r"[.,](\d{2})$", s)
     if dec:
         intpart = re.sub(r"[^\d]", "", s[: dec.start()]) or "0"
         return round(int(intpart) + int(dec.group(1)) / 100.0, 2)
     digits = re.sub(r"[^\d]", "", s)
     return int(digits) if digits else None
+
+
+# Sanity-check jalan tiap kali modul di-import (termasuk saat kontainer Modal
+# cold-start) — pernah ada bug di mana ekspresi regex ini rusak diam-diam
+# gara-gara lapisan escaping saat file ditulis ulang, dan angka yang keluar
+# tetap "terlihat masuk akal" (182 padahal seharusnya 28182) alih-alih error
+# yang kelihatan. Kalau assert ini gagal, deploy akan CRASH jelas di log,
+# bukan diam-diam menyajikan nominal yang salah ke user.
+assert _amount_value("SUBTTL 28 . 182") == 28182, "regresi: spasi di sekitar desimal tak dirapatkan"
+assert _amount_value("PB-1  108 2.818") == 2818, "regresi: kandidat pertama terpilih, bukan yang terakhir"
+assert _amount_value("TOTAL 31 0oo") == 31000, "regresi: ekor 0oo tak dikoreksi jadi 000"
+assert _amount_value("12.50") == 12.5, "regresi: parsing desimal RM"
+assert _amount_value("60,000") == 60000, "regresi: parsing ribuan"
 
 
 def _strip_bio(label):
@@ -202,12 +225,15 @@ def _reconstruct(words, labels):
     max_containers=2,
     scaledown_window=90,       # mati 90 detik setelah request terakhir (hemat kredit)
     timeout=300,
-    enable_memory_snapshot=True,  # snapshot memori -> cold start ~5s, bukan ~25s
+    # enable_memory_snapshot=True,  # NONAKTIF SEMENTARA: snapshot ke-cache
+    # bytecode lama walau sudah redeploy (source dari bug parsing angka yang
+    # baru diperbaiki - lihat CLAUDE.md). Aktifkan lagi setelah kode benar2
+    # stabil, dan SELALU verifikasi lewat curl setelah redeploy, jangan asumsi.
     secrets=[modal.Secret.from_name("scan-struk")],
 )
 @modal.concurrent(max_inputs=1)  # 1 struk pada satu waktu per kontainer
 class ScanService:
-    @modal.enter(snap=True)
+    @modal.enter()
     def load(self):
         import torch
         from transformers import LayoutLMv3ForTokenClassification, LayoutLMv3Processor

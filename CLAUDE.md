@@ -528,6 +528,53 @@ keduanya secara eksplisit.
 
 typecheck + lint + `next build` lolos.
 
+## Ronde 16 (2026-09-12) — uji kualitas deteksi scan struk dengan data nyata
+
+User minta diverifikasi apakah scan struk benar-benar bisa mendeteksi dengan
+baik. Tidak ada foto struk asli dari user, jadi dites dengan 5 gambar test
+split CORD-v2 (yang punya ground truth resmi, termasuk 1 foto resolusi tinggi
+2304×4096) langsung ke endpoint Modal live — bukan sekadar baca kode.
+
+**Temuan #1 (positif): klasifikasi field LayoutLMv3 akurat.** Model konsisten
+benar membedakan nama item vs harga vs subtotal vs pajak vs total vs
+tunai/kembalian di berbagai format struk — ini nilai utama dari fine-tuning,
+bukan cuma OCR mentah.
+
+**Temuan #2 (bug nyata, sekarang diperbaiki): parsing nominal `_amount_value()`
+salah pada pola yang justru sering muncul di data asli:**
+- Field ringkasan berformat "LABEL ANGKA" (mis. "PB-1 10% 2.818") — kode lama
+  ambil angka PERTAMA di string (nomor kode label, "1" dari "PB-1"), bukan
+  nilai sebenarnya di ujung. **Diperbaiki:** ambil kandidat angka paling
+  belakang.
+- EasyOCR sering menyisipkan spasi nyempil di sekitar titik desimal
+  ("28 . 182") dan salah baca ekor "000" sebagai huruf ("31 0oo") — nilai
+  yang terhitung sebelumnya diam-diam SALAH TAPI TERLIHAT MASUK AKAL (182
+  bukan 28.182; 310 bukan 31.000) tanpa error apa pun. **Diperbaiki** dengan
+  regex tambahan (rapatkan spasi desimal, koreksi ekor 0oo→000 tanpa
+  menggabung dua field angka berbeda yang cuma dipisah 1 spasi).
+- Diverifikasi terhadap ground truth CORD-v2: subtotal 28.182 & pajak 2.818
+  sekarang **persis sama** dengan angka resmi dataset (sebelumnya 182 & 818).
+- Ditambah 5 `assert` sanity-check yang jalan tiap modul di-import (termasuk
+  cold-start kontainer Modal) — kalau regex ini rusak lagi, deploy CRASH
+  jelas di log, bukan diam-diam menyajikan nominal salah.
+
+**Temuan #3 (proses): `enable_memory_snapshot=True` bikin kode LAMA masih
+terpakai walau sudah redeploy** (snapshot dipulihkan dari sebelum perubahan).
+Dinonaktifkan sementara — WAJIB verifikasi lewat curl langsung setelah tiap
+redeploy Modal, jangan asumsi "deploy sukses" = "kode baru jalan". Pertimbangkan
+aktifkan lagi (untuk cold-start lebih cepat) hanya kalau ritme edit sudah
+benar-benar berhenti.
+
+**Kesimpulan yang jujur:** nomor makin akurat kalau confidence OCR tinggi;
+di gambar yang confidence-nya rendah (satu dari 5 sampel ketahuan skor rata
+0.31, sudah otomatis muncul warning), nama item & sebagian angka tetap
+berantakan — sesuai desain (makanya ada layar review + edit manual, bukan
+"pasti benar otomatis"). **Belum ada foto struk ASLI (hasil foto HP, bukan
+gambar dataset) yang dites** — CORD-v2 tetap gambar riset yang sengaja
+memuat kondisi buruk (blur/miring/gelap); struk asli hasil foto HP yang niat
+kemungkinan lebih baik. Rekomendasi: minta 2-3 foto struk asli dari user
+untuk tes definitif.
+
 ## Yang TIDAK perlu dikerjakan otomatis
 
 - Migrasi data dari Bizmo ke MSU — menunggu tindakan manusia (pemilik Bizmo invite member, atau ekspor file manual).
