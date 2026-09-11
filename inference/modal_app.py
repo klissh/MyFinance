@@ -143,6 +143,19 @@ assert _amount_value("12.50") == 12.5, "regresi: parsing desimal RM"
 assert _amount_value("60,000") == 60000, "regresi: parsing ribuan"
 
 
+def _is_barcode_like(word: str) -> bool:
+    """True untuk kode barang/barcode (>=8 digit murni, tanpa titik/koma) —
+    ditemukan dari struk retail asli, kata seperti ini menghabiskan jatah
+    token LayoutLMv3 secara tidak proporsional dan tidak bernilai klasifikasi."""
+    digits_only = re.sub(r"\s", "", word)
+    return len(digits_only) >= 8 and digits_only.isdigit()
+
+
+assert _is_barcode_like("9555452100071") is True
+assert _is_barcode_like("2.30") is False
+assert _is_barcode_like("15") is False
+
+
 def _strip_bio(label):
     return label[2:] if label[:2] in ("B-", "I-") else ("" if label == "O" else label)
 
@@ -305,9 +318,20 @@ class ScanService:
                 "warnings": ["EasyOCR tidak menemukan teks — cek pencahayaan / fokus / crop foto."],
             }
 
+        # Kode barang/barcode (angka murni panjang, mis. "9555452100071") tidak
+        # bernilai untuk klasifikasi tapi menghabiskan jatah token TIDAK
+        # PROPORSIONAL (word-piece tokenizer sering pecah tiap beberapa digit
+        # jadi token sendiri) — ditemukan dari struk retail asli: bagian
+        # TOTAL di footer malah terpotong duluan gara-gara kode barang di
+        # baris-baris item di atasnya. Kode ini TETAP muncul di raw_words
+        # (label "O"), cuma tidak dikirim ke LayoutLMv3.
+        model_idx = [i for i, wd in enumerate(words) if not _is_barcode_like(wd)]
+        model_words = [words[i] for i in model_idx]
+        model_boxes = [boxes[i] for i in model_idx]
+
         t0 = time.time()
         enc = self.processor(
-            img, words, boxes=boxes,
+            img, model_words, boxes=model_boxes,
             truncation=True, padding="max_length", max_length=MAX_TOKENS,
             return_tensors="pt",
         )
@@ -318,14 +342,17 @@ class ScanService:
 
         word_ids = enc.word_ids(0)
         n = len(words)
+        m = len(model_words)
         wl = [None] * n
+        model_labeled = [False] * m
         for tok_idx, wid in enumerate(word_ids):
-            if wid is not None and wid < n and wl[wid] is None:
-                wl[wid] = self.id2label.get(int(pred_ids[tok_idx]), "O")
-        n_trunc = sum(x is None for x in wl)
+            if wid is not None and wid < m and wl[model_idx[wid]] is None:
+                wl[model_idx[wid]] = self.id2label.get(int(pred_ids[tok_idx]), "O")
+                model_labeled[wid] = True
+        n_trunc = sum(1 for lab in model_labeled if not lab)  # dari yg DIKIRIM ke model saja
         if n_trunc:
-            warnings.append(f"Struk panjang: {n_trunc}/{n} kata terpotong batas {MAX_TOKENS} token — cek bagian bawah struk manual.")
-        wl = [x or "O" for x in wl]
+            warnings.append(f"Struk panjang: {n_trunc}/{m} kata terpotong batas {MAX_TOKENS} token — cek bagian bawah struk (terutama TOTAL) manual.")
+        wl = [x or "O" for x in wl]  # kode barang & sisa kata tak terkirim -> "O"
 
         raw_words = [
             {"text": wd, "box": bx, "label": _strip_bio(lb) or "O", "bio": lb, "ocr_conf": cf}
