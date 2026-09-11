@@ -54,6 +54,8 @@ Belum ada user sama sekali di database. Daftar lewat `/signup`:
 | `npm run lint`      | ESLint (harus 0 error)                        |
 | `npm run typecheck` | `tsc --noEmit`                                |
 | `npm run format`    | Prettier                                      |
+| `npm run test`      | Unit test (vitest) — logika murni di `lib/`   |
+| `npm run test:watch`| Unit test, mode watch                         |
 
 ## Struktur
 

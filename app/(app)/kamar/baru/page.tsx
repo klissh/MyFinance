@@ -36,6 +36,7 @@ import {
   KeyRound,
   Building2,
   CheckCircle2,
+  AlertTriangle,
   Sparkles,
   ArrowRight,
 } from "lucide-react"
@@ -56,9 +57,9 @@ export default function BuatKamarBaruPage() {
   const [isSubmittingJoin, setIsSubmittingJoin] = useState(false)
 
   // Notification Toast
-  const [notification, setNotification] = useState<string | null>(null)
-  const showNotification = (msg: string) => {
-    setNotification(msg)
+  const [notification, setNotification] = useState<{ msg: string; error?: boolean } | null>(null)
+  const showNotification = (msg: string, error = false) => {
+    setNotification({ msg, error })
     setTimeout(() => setNotification(null), 4000)
   }
 
@@ -72,15 +73,20 @@ export default function BuatKamarBaruPage() {
 
     setIsSubmittingCreate(true)
     const feeNum = parseFormattedNumber(createMonthlyFee) || 200000
-    const room = await kamarService.createRoom(
-      createRoomName,
-      createLocation,
-      feeNum,
-      Number(createMaxMembers) || 4
-    )
-    showNotification(`Kamar "${room.name}" berhasil dibuat! Kode undangan: ${room.code}`)
-    setIsSubmittingCreate(false)
-    router.push("/kamar/kos")
+    try {
+      const room = await kamarService.createRoom(
+        createRoomName,
+        createLocation,
+        feeNum,
+        Number(createMaxMembers) || 4
+      )
+      showNotification(`Kamar "${room.name}" berhasil dibuat! Kode undangan: ${room.code}`)
+      router.push("/kamar/kos")
+    } catch (err) {
+      showNotification(err instanceof Error ? err.message : "Gagal membuat kamar.", true)
+    } finally {
+      setIsSubmittingCreate(false)
+    }
   }
 
   // Handle Gabung Kamar
@@ -93,7 +99,7 @@ export default function BuatKamarBaruPage() {
     setIsSubmittingJoin(false)
 
     if (error || !room) {
-      showNotification(error || "Gagal bergabung ke kamar.")
+      showNotification(error || "Gagal bergabung ke kamar.", true)
       return
     }
 
@@ -131,9 +137,19 @@ export default function BuatKamarBaruPage() {
       <div className="flex flex-1 flex-col gap-6 p-4 md:p-6 bg-background">
         {/* Notification Toast */}
         {notification && (
-          <div className="flex items-center gap-2.5 rounded-xl border border-border bg-card px-3.5 py-3 text-xs text-foreground shadow-sm animate-in fade-in slide-in-from-top-2">
-            <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-            <span>{notification}</span>
+          <div
+            className={`flex items-center gap-2.5 rounded-xl border px-3.5 py-3 text-xs shadow-sm animate-in fade-in slide-in-from-top-2 ${
+              notification.error
+                ? "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400"
+                : "border-border bg-card text-foreground"
+            }`}
+          >
+            {notification.error ? (
+              <AlertTriangle className="size-4 shrink-0" />
+            ) : (
+              <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+            )}
+            <span>{notification.msg}</span>
           </div>
         )}
 

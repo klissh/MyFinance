@@ -527,5 +527,39 @@ GRANT EXECUTE ON FUNCTION public.is_room_member(uuid, uuid) TO authenticated;
 -- tetap jalan; akses ke kamar sendiri tidak terganggu.
 
 -- ====================================================================
+-- 19. SEMUA DATA DI SUPABASE (BUGFIX.md #5)
+--     Migrasi: move_local_sidecars_to_real_columns — SUDAH diterapkan
+-- ====================================================================
+-- 3 sidecar localStorage (per-device, tak sinkron antar device) dipindah
+-- ke kolom Supabase asli:
+ALTER TABLE public.accounts
+  ADD COLUMN IF NOT EXISTS card_number text,   -- dulu sidecar CARD_META. Di-mask
+  ADD COLUMN IF NOT EXISTS card_holder text,   -- (>=12 digit -> 4 digit terakhir)
+  ADD COLUMN IF NOT EXISTS expiration text;    -- sebelum disimpan, lihat maskCardNumber().
+
+ALTER TABLE public.scheduled_payments
+  ADD COLUMN IF NOT EXISTS account_id uuid REFERENCES public.accounts(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS notes text;         -- dulu sidecar SCHEDULED_META.
+
+ALTER TABLE public.room_transactions
+  ADD COLUMN IF NOT EXISTS payer_account_id uuid REFERENCES public.accounts(id) ON DELETE SET NULL;
+  -- dulu sidecar SPLIT_META (localStorage, keyed by transaction_id -> nama akun).
+
+-- `lib/db.ts`: readCardMeta()/readSplitMeta()/readScheduledMeta() tetap ada
+-- HANYA untuk backfill sekali dari cache lama ke kolom di atas (lihat
+-- accountService.getAll / scheduledService.getAll / writePayerAccount()).
+-- writeCardMeta()/writeScheduledMeta() sudah dihapus total (tak ada lagi
+-- jalur tulis ke sidecar sebagai sumber kebenaran).
+--
+-- Selain migrasi kolom, seluruh method tulis (add/update/remove) di
+-- accountService, transactionService, goalService, scheduledService, dan
+-- kamarService.createRoom/addRequirement sekarang MELEMPAR error kalau
+-- Supabase dikonfigurasi tapi request gagal — tidak lagi diam-diam jatuh ke
+-- record lokal palsu yang terlihat "berhasil" padahal tak pernah tersimpan
+-- di server (akar masalah BUGFIX.md #5). Fallback localStorage MURNI ("mode
+-- lokal") hanya berlaku kalau Supabase sama sekali tidak dikonfigurasi
+-- (dev tanpa .env) — bukan lagi jalur diam-diam saat request nyata gagal.
+
+-- ====================================================================
 -- END OF SCHEMA
 -- ====================================================================

@@ -234,6 +234,32 @@ function writeSplitMeta(txId: string, account: string): void {
   }
 }
 
+/**
+ * Simpan akun penalang ke kolom `room_transactions.payer_account_id` (sinkron
+ * antar device — pengganti sidecar SPLIT_META). Best-effort: kalau update
+ * Supabase gagal, jatuh ke sidecar lokal supaya reconcile di device INI masih
+ * benar sampai percobaan berikutnya berhasil.
+ */
+async function writePayerAccount(txId: string, accountName: string): Promise<void> {
+  if (!accountName) return
+  if (isSupabaseConfigured && supabase && txId.includes("-")) {
+    try {
+      const accs = await accountService.getAll()
+      const accId = accs.find((a) => a.name === accountName)?.id
+      if (accId && accId.includes("-")) {
+        const { error } = await supabase
+          .from("room_transactions")
+          .update({ payer_account_id: accId })
+          .eq("id", txId)
+        if (!error) return
+      }
+    } catch (err) {
+      console.warn("writePayerAccount exception:", err)
+    }
+  }
+  writeSplitMeta(txId, accountName)
+}
+
 function readScheduledMeta(): Record<string, { account?: string; notes?: string }> {
   if (typeof window === "undefined") return {}
   try {
@@ -242,20 +268,13 @@ function readScheduledMeta(): Record<string, { account?: string; notes?: string 
     return {}
   }
 }
-function writeScheduledMeta(id: string, meta: { account?: string; notes?: string }): void {
-  if (typeof window === "undefined") return
-  try {
-    const all = readScheduledMeta()
-    all[id] = { ...all[id], ...meta }
-    localStorage.setItem(BASE_STORAGE_KEYS.SCHEDULED_META, JSON.stringify(all))
-  } catch {
-    // ignore
-  }
-}
+// writeScheduledMeta() dihapus — account/notes sekarang kolom Supabase asli
+// (`scheduled_payments.account_id`/`notes`). readScheduledMeta() tetap ada
+// hanya untuk backfill sekali dari cache lama (lihat scheduledService.getAll).
 
 // Tanggal "YYYY-MM-DD" menurut waktu LOKAL (bukan UTC). Penting di UTC+8:
 // `new Date().toISOString()` bisa mundur 1 hari lewat tengah malam.
-function todayLocalISO(d: Date = new Date()): string {
+export function todayLocalISO(d: Date = new Date()): string {
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, "0")
   const day = String(d.getDate()).padStart(2, "0")
@@ -266,7 +285,7 @@ function todayLocalISO(d: Date = new Date()): string {
 // sebagai id permanen di mode lokal tanpa Supabase). `crypto.randomUUID()`
 // dipakai supaya tak rawan tabrakan seperti 4 digit terakhir `Date.now()`
 // (dua device bisa membuat record di milidetik yang berdekatan).
-function localId(prefix: string): string {
+export function localId(prefix: string): string {
   try {
     if (typeof crypto !== "undefined" && crypto.randomUUID) {
       return `${prefix}-${crypto.randomUUID()}`
@@ -281,7 +300,7 @@ function localId(prefix: string): string {
 // dibutuhkan utuh oleh logika apa pun. Kalau user mengetik nomor kartu ASLI
 // (>=12 digit berurutan) alih-alih pola contoh ("**** **** 8829"), maskir
 // semua kecuali 4 digit terakhir sebelum disimpan ke localStorage.
-function maskCardNumber(input: string): string {
+export function maskCardNumber(input: string): string {
   const digits = input.replace(/\D/g, "")
   if (digits.length >= 12) {
     return `**** **** **** ${digits.slice(-4)}`
@@ -289,7 +308,7 @@ function maskCardNumber(input: string): string {
   return input
 }
 
-function formatIdDate(input: string | Date): string {
+export function formatIdDate(input: string | Date): string {
   const d = typeof input === "string" ? new Date(input) : input
   if (isNaN(d.getTime())) return "-"
   return d.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })
@@ -310,16 +329,10 @@ function readCardMeta(): Record<string, CardMeta> {
   }
 }
 
-function writeCardMeta(accountId: string, meta: CardMeta): void {
-  if (typeof window === "undefined") return
-  try {
-    const all = readCardMeta()
-    all[accountId] = { ...meta, cardNumber: maskCardNumber(meta.cardNumber) }
-    localStorage.setItem(BASE_STORAGE_KEYS.CARD_META, JSON.stringify(all))
-  } catch {
-    // ignore
-  }
-}
+// writeCardMeta() dihapus — nomor/pemilik/expiry kartu sekarang kolom Supabase
+// asli (`accounts.card_number`/`card_holder`/`expiration`, di-mask sebelum
+// disimpan — lihat maskCardNumber()). readCardMeta() tetap ada hanya untuk
+// backfill sekali dari cache lama (lihat accountService.getAll).
 
 // Turunkan kategori akun ("bank" | "cash" | "ewallet") dari label tipe.
 function deriveAccountCategory(type: string): FinancialAccountRecord["accountCategory"] {
@@ -541,18 +554,28 @@ export const accountService = {
           .order("created_at", { ascending: false })
 
         if (!error && data) {
-          const cardMeta = readCardMeta()
+          // Sidecar CARD_META lama — hanya dipakai untuk BACKFILL sekali dari device
+          // yang masih punya cache lama, sebelum kolom `accounts.card_number` dkk ada.
+          // Sumber kebenaran sekarang kolom Supabase (sinkron antar device).
+          const legacyMeta = readCardMeta()
+          const backfills: Array<{ id: string; meta: CardMeta }> = []
           const mapped: FinancialAccountRecord[] = data.map((a) => {
-            const meta = cardMeta[a.id as string]
+            const legacy = legacyMeta[a.id as string]
+            const cardNumber = a.card_number || legacy?.cardNumber || "**** **** 0000"
+            const cardHolder = a.card_holder || legacy?.cardHolder || currentUser.fullName || "USER"
+            const expiration = a.expiration || legacy?.expiration || "12/29"
+            if (!a.card_number && legacy) {
+              backfills.push({ id: a.id as string, meta: { cardNumber, cardHolder, expiration } })
+            }
             return {
               id: a.id,
               name: a.name,
               type: a.type,
               accountCategory: deriveAccountCategory(a.type || ""),
               balance: Number(a.balance),
-              cardNumber: meta?.cardNumber || "**** **** 0000",
-              cardHolder: meta?.cardHolder || currentUser.fullName || "USER",
-              expiration: meta?.expiration || "12/29",
+              cardNumber,
+              cardHolder,
+              expiration,
               cardDesignType: (a.color as FinancialAccountRecord["cardDesignType"]) || "brand-dark",
               cardNetwork: normalizeCardNetwork(a.card_network),
             }
@@ -562,6 +585,19 @@ export const accountService = {
               getUserStorageKey(BASE_STORAGE_KEYS.ACCOUNTS),
               JSON.stringify(mapped),
             )
+          }
+          // Backfill best-effort (tidak diblokir/di-await oleh pemanggil) — sekali
+          // migrasi selesai, sidecar CARD_META boleh dihapus total dari codebase.
+          for (const b of backfills) {
+            supabase
+              .from("accounts")
+              .update({
+                card_number: maskCardNumber(b.meta.cardNumber),
+                card_holder: b.meta.cardHolder,
+                expiration: b.meta.expiration,
+              })
+              .eq("id", b.id)
+              .then(() => {})
           }
           return mapped
         }
@@ -580,65 +616,69 @@ export const accountService = {
     }
   },
 
+  /**
+   * @throws Error kalau Supabase dikonfigurasi tapi insert gagal (sesi tidak
+   *   valid / RLS / jaringan) — TIDAK LAGI diam-diam jatuh ke record lokal
+   *   palsu yang terlihat "berhasil" padahal tak pernah tersimpan di server.
+   */
   async add(item: Omit<FinancialAccountRecord, "id">): Promise<FinancialAccountRecord> {
     const currentUser = authService.getCurrentUser()
-    let newRecord: FinancialAccountRecord = {
-      ...item,
-      id: localId("ACC"),
-    }
 
-    if (isSupabaseConfigured && supabase && currentUser?.id && currentUser.id.includes("-")) {
-      try {
-        const { data, error } = await supabase
-          .from("accounts")
-          .insert([
-            {
-              user_id: currentUser.id,
-              name: item.name,
-              type: item.type,
-              balance: item.balance,
-              color: item.cardDesignType,
-              card_network: item.cardNetwork,
-            },
-          ])
-          .select()
-          .single()
-
-        if (!error && data) {
-          newRecord = {
-            id: data.id,
-            name: data.name,
-            type: data.type,
-            accountCategory: deriveAccountCategory(data.type || item.type),
-            balance: Number(data.balance),
-            cardNumber: item.cardNumber,
-            cardHolder: item.cardHolder,
-            expiration: item.expiration,
-            cardDesignType: (data.color as FinancialAccountRecord["cardDesignType"]) || item.cardDesignType,
-            cardNetwork: data.card_network ? normalizeCardNetwork(data.card_network) : item.cardNetwork,
-          }
-        } else if (error) {
-          console.error("Supabase account insert error:", error)
-        }
-      } catch (err) {
-        console.warn("Supabase account insert exception:", err)
+    if (isSupabaseConfigured && supabase) {
+      if (!currentUser?.id || !currentUser.id.includes("-")) {
+        throw new Error("Sesi tidak valid. Silakan login ulang.")
       }
+      const { data, error } = await supabase
+        .from("accounts")
+        .insert([
+          {
+            user_id: currentUser.id,
+            name: item.name,
+            type: item.type,
+            balance: item.balance,
+            color: item.cardDesignType,
+            card_network: item.cardNetwork,
+            card_number: maskCardNumber(item.cardNumber),
+            card_holder: item.cardHolder,
+            expiration: item.expiration,
+          },
+        ])
+        .select()
+        .single()
+
+      if (error || !data) {
+        console.error("Supabase account insert error:", error)
+        throw new Error("Gagal menambah sumber dana. Coba lagi.")
+      }
+
+      const newRecord: FinancialAccountRecord = {
+        id: data.id,
+        name: data.name,
+        type: data.type,
+        accountCategory: deriveAccountCategory(data.type || item.type),
+        balance: Number(data.balance),
+        cardNumber: data.card_number || item.cardNumber,
+        cardHolder: data.card_holder || item.cardHolder,
+        expiration: data.expiration || item.expiration,
+        cardDesignType: (data.color as FinancialAccountRecord["cardDesignType"]) || item.cardDesignType,
+        cardNetwork: data.card_network ? normalizeCardNetwork(data.card_network) : item.cardNetwork,
+      }
+      const list = await this.getAll()
+      const updated = [newRecord, ...list.filter((a) => a.id !== newRecord.id)]
+      if (typeof window !== "undefined") {
+        localStorage.setItem(getUserStorageKey(BASE_STORAGE_KEYS.ACCOUNTS), JSON.stringify(updated))
+      }
+      return newRecord
     }
 
-    // Simpan dekorasi kartu di sidecar lokal.
-    writeCardMeta(newRecord.id, {
-      cardNumber: item.cardNumber,
-      cardHolder: item.cardHolder,
-      expiration: item.expiration,
-    })
-
+    // Mode lokal murni (Supabase TIDAK dikonfigurasi sama sekali, mis. dev tanpa
+    // .env) — localStorage sengaja jadi source of truth di sini. Beda dari
+    // fallback diam-diam saat request Supabase asli gagal (sudah dihapus di atas).
+    const newRecord: FinancialAccountRecord = { ...item, id: localId("ACC") }
     const list = await this.getAll()
     const updated = [newRecord, ...list.filter((a) => a.id !== newRecord.id)]
     if (typeof window !== "undefined") {
-      localStorage.setItem(
-        getUserStorageKey(BASE_STORAGE_KEYS.ACCOUNTS),
-        JSON.stringify(updated),
-      )
+      localStorage.setItem(getUserStorageKey(BASE_STORAGE_KEYS.ACCOUNTS), JSON.stringify(updated))
     }
     return newRecord
   },
@@ -694,26 +734,23 @@ export const accountService = {
     if (!before) return
 
     if (isSupabaseConfigured && supabase && id.includes("-")) {
-      try {
-        const upd: Record<string, unknown> = {}
-        if (patch.name !== undefined) upd.name = patch.name
-        if (patch.type !== undefined) upd.type = patch.type
-        if (patch.balance !== undefined) upd.balance = patch.balance
-        if (patch.cardDesignType !== undefined) upd.color = patch.cardDesignType
-        if (patch.cardNetwork !== undefined) upd.card_network = patch.cardNetwork
-        if (Object.keys(upd).length) {
-          await supabase.from("accounts").update(upd).eq("id", id)
+      const upd: Record<string, unknown> = {}
+      if (patch.name !== undefined) upd.name = patch.name
+      if (patch.type !== undefined) upd.type = patch.type
+      if (patch.balance !== undefined) upd.balance = patch.balance
+      if (patch.cardDesignType !== undefined) upd.color = patch.cardDesignType
+      if (patch.cardNetwork !== undefined) upd.card_network = patch.cardNetwork
+      if (patch.cardNumber !== undefined) upd.card_number = maskCardNumber(patch.cardNumber)
+      if (patch.cardHolder !== undefined) upd.card_holder = patch.cardHolder
+      if (patch.expiration !== undefined) upd.expiration = patch.expiration
+      if (Object.keys(upd).length) {
+        const { error } = await supabase.from("accounts").update(upd).eq("id", id)
+        if (error) {
+          console.error("account update error:", error)
+          throw new Error("Gagal menyimpan perubahan sumber dana. Coba lagi.")
         }
-      } catch (err) {
-        console.warn("account update exception:", err)
       }
     }
-
-    writeCardMeta(id, {
-      cardNumber: patch.cardNumber ?? before.cardNumber,
-      cardHolder: patch.cardHolder ?? before.cardHolder,
-      expiration: patch.expiration ?? before.expiration,
-    })
 
     const updated = list.map((a) =>
       a.id === id
@@ -754,26 +791,16 @@ export const accountService = {
     if (!target) return
 
     if (isSupabaseConfigured && supabase && id.includes("-")) {
-      try {
-        await supabase.from("accounts").delete().eq("id", id)
-      } catch (err) {
-        console.warn("account remove exception:", err)
+      const { error } = await supabase.from("accounts").delete().eq("id", id)
+      if (error) {
+        console.error("account remove error:", error)
+        throw new Error("Gagal menghapus sumber dana. Coba lagi.")
       }
     }
 
     const updated = list.filter((a) => a.id !== id)
     if (typeof window !== "undefined") {
-      localStorage.setItem(
-        getUserStorageKey(BASE_STORAGE_KEYS.ACCOUNTS),
-        JSON.stringify(updated),
-      )
-      try {
-        const meta = readCardMeta()
-        delete meta[id]
-        localStorage.setItem(BASE_STORAGE_KEYS.CARD_META, JSON.stringify(meta))
-      } catch {
-        // ignore
-      }
+      localStorage.setItem(getUserStorageKey(BASE_STORAGE_KEYS.ACCOUNTS), JSON.stringify(updated))
     }
   },
 }
@@ -920,6 +947,13 @@ export const transactionService = {
    * @param opts.adjustBalance default `true` — saldo akun terkait ikut berubah
    *   (`out` → berkurang, `in` → bertambah). Set `false` khusus untuk transfer
    *   antar akun yang sudah menyesuaikan saldo sendiri.
+   * @throws Error kalau Supabase dikonfigurasi tapi insert gagal — TIDAK LAGI
+   *   diam-diam jatuh ke record lokal palsu. Pemanggil auto-log (goal deposit,
+   *   bayar tagihan, reconcile split bill) membungkus panggilan ini sendiri
+   *   dengan try/catch supaya satu auto-log gagal tidak merusak alur lain;
+   *   panggilan langsung dari halaman /transaksi SENGAJA dibiarkan melempar
+   *   supaya usernya lihat errornya, bukan entri yang terlihat tersimpan
+   *   padahal tidak pernah sampai ke server.
    */
   async add(
     item: Omit<TransactionRecord, "id">,
@@ -927,69 +961,76 @@ export const transactionService = {
   ): Promise<TransactionRecord> {
     const { adjustBalance = true } = opts
     const currentUser = authService.getCurrentUser()
-    let newRecord: TransactionRecord = {
-      ...item,
-      id: localId("TX"),
-    }
 
-    if (isSupabaseConfigured && supabase && currentUser?.id && currentUser.id.includes("-")) {
-      try {
-        // Resolve nama akun → account_id.
-        let accountId: string | null = null
-        if (item.account) {
-          const accs = await accountService.getAll()
-          accountId = accs.find((a) => a.name === item.account)?.id || null
-          if (accountId && !accountId.includes("-")) accountId = null // id lokal, bukan uuid
-        }
-
-        const { data, error } = await supabase
-          .from("transactions")
-          .insert([
-            {
-              user_id: currentUser.id,
-              account_id: accountId,
-              title: item.title,
-              category: item.category,
-              type: item.type,
-              amount: item.amount,
-              date: item.date || todayLocalISO(),
-              notes: item.notes || "",
-            },
-          ])
-          .select("*, accounts(name)")
-          .single()
-
-        if (!error && data) {
-          newRecord = {
-            id: data.id,
-            title: data.title,
-            category: data.category,
-            type: data.type as "in" | "out",
-            amount: Number(data.amount),
-            account: (data.accounts as { name?: string } | null)?.name || item.account,
-            date: data.date,
-            formattedDate: formatIdDate(data.date),
-            notes: data.notes || "",
-          }
-        } else if (error) {
-          console.error("Supabase transaction insert error:", error)
-        }
-      } catch (err) {
-        console.warn("Supabase transaction insert exception:", err)
+    if (isSupabaseConfigured && supabase) {
+      if (!currentUser?.id || !currentUser.id.includes("-")) {
+        throw new Error("Sesi tidak valid. Silakan login ulang.")
       }
+      // Resolve nama akun → account_id.
+      let accountId: string | null = null
+      if (item.account) {
+        const accs = await accountService.getAll()
+        accountId = accs.find((a) => a.name === item.account)?.id || null
+        if (accountId && !accountId.includes("-")) accountId = null // id lokal, bukan uuid
+      }
+
+      const { data, error } = await supabase
+        .from("transactions")
+        .insert([
+          {
+            user_id: currentUser.id,
+            account_id: accountId,
+            title: item.title,
+            category: item.category,
+            type: item.type,
+            amount: item.amount,
+            date: item.date || todayLocalISO(),
+            notes: item.notes || "",
+          },
+        ])
+        .select("*, accounts(name)")
+        .single()
+
+      if (error || !data) {
+        console.error("Supabase transaction insert error:", error)
+        throw new Error("Gagal menyimpan transaksi. Coba lagi.")
+      }
+
+      const newRecord: TransactionRecord = {
+        id: data.id,
+        title: data.title,
+        category: data.category,
+        type: data.type as "in" | "out",
+        amount: Number(data.amount),
+        account: (data.accounts as { name?: string } | null)?.name || item.account,
+        date: data.date,
+        formattedDate: formatIdDate(data.date),
+        notes: data.notes || "",
+      }
+
+      if (adjustBalance && item.account) {
+        const delta = item.type === "in" ? item.amount : -item.amount
+        await accountService.adjustBalanceByName(item.account, delta)
+      }
+
+      const list = await this.getAll()
+      const updated = [newRecord, ...list.filter((t) => t.id !== newRecord.id)]
+      if (typeof window !== "undefined") {
+        localStorage.setItem(getUserStorageKey(BASE_STORAGE_KEYS.TRANSACTIONS), JSON.stringify(updated))
+      }
+      return newRecord
     }
 
-    // Saldo akun ikut bergerak.
+    // Mode lokal murni (Supabase TIDAK dikonfigurasi sama sekali).
+    const newRecord: TransactionRecord = { ...item, id: localId("TX") }
     if (adjustBalance && item.account) {
       const delta = item.type === "in" ? item.amount : -item.amount
       await accountService.adjustBalanceByName(item.account, delta)
     }
-
     const list = await this.getAll()
     const updated = [newRecord, ...list.filter((t) => t.id !== newRecord.id)]
     if (typeof window !== "undefined") {
-      const key = getUserStorageKey(BASE_STORAGE_KEYS.TRANSACTIONS)
-      localStorage.setItem(key, JSON.stringify(updated))
+      localStorage.setItem(getUserStorageKey(BASE_STORAGE_KEYS.TRANSACTIONS), JSON.stringify(updated))
     }
     return newRecord
   },
@@ -1023,29 +1064,30 @@ export const transactionService = {
     const after = { ...before, ...patch }
 
     if (isSupabaseConfigured && supabase && id.includes("-")) {
-      try {
-        const upd: Record<string, unknown> = {}
-        if (patch.title !== undefined) upd.title = patch.title
-        if (patch.category !== undefined) upd.category = patch.category
-        if (patch.type !== undefined) upd.type = patch.type
-        if (patch.amount !== undefined) upd.amount = patch.amount
-        if (patch.date !== undefined) upd.date = patch.date
-        if (patch.notes !== undefined) upd.notes = patch.notes
-        if (patch.account !== undefined && patch.account !== before.account) {
-          const accs = await accountService.getAll()
-          let accId = accs.find((a) => a.name === patch.account)?.id || null
-          if (accId && !accId.includes("-")) accId = null
-          upd.account_id = accId
+      const upd: Record<string, unknown> = {}
+      if (patch.title !== undefined) upd.title = patch.title
+      if (patch.category !== undefined) upd.category = patch.category
+      if (patch.type !== undefined) upd.type = patch.type
+      if (patch.amount !== undefined) upd.amount = patch.amount
+      if (patch.date !== undefined) upd.date = patch.date
+      if (patch.notes !== undefined) upd.notes = patch.notes
+      if (patch.account !== undefined && patch.account !== before.account) {
+        const accs = await accountService.getAll()
+        let accId = accs.find((a) => a.name === patch.account)?.id || null
+        if (accId && !accId.includes("-")) accId = null
+        upd.account_id = accId
+      }
+      if (Object.keys(upd).length) {
+        const { error } = await supabase.from("transactions").update(upd).eq("id", id)
+        if (error) {
+          console.error("transaction update error:", error)
+          throw new Error("Gagal menyimpan perubahan transaksi. Coba lagi.")
         }
-        if (Object.keys(upd).length) {
-          await supabase.from("transactions").update(upd).eq("id", id)
-        }
-      } catch (err) {
-        console.warn("transaction update exception:", err)
       }
     }
 
-    // Saldo: batalkan efek lama, terapkan efek baru.
+    // Saldo: batalkan efek lama, terapkan efek baru. (Baru dilakukan SETELAH
+    // Supabase sukses — supaya saldo tidak pernah menyimpang dari data server.)
     const oldDelta = before.type === "in" ? before.amount : -before.amount
     const newDelta = after.type === "in" ? after.amount : -after.amount
     if (before.account === after.account) {
@@ -1073,10 +1115,10 @@ export const transactionService = {
     if (!target) return
 
     if (isSupabaseConfigured && supabase && id.includes("-")) {
-      try {
-        await supabase.from("transactions").delete().eq("id", id)
-      } catch (err) {
-        console.warn("transaction remove exception:", err)
+      const { error } = await supabase.from("transactions").delete().eq("id", id)
+      if (error) {
+        console.error("transaction remove error:", error)
+        throw new Error("Gagal menghapus transaksi. Coba lagi.")
       }
     }
 
@@ -1211,54 +1253,58 @@ export const goalService = {
     }
   },
 
+  /** @throws Error kalau Supabase dikonfigurasi tapi insert gagal. */
   async add(item: Omit<GoalRecord, "id" | "currentAmount" | "status">): Promise<GoalRecord> {
     const currentUser = authService.getCurrentUser()
-    let newGoal: GoalRecord = {
-      ...item,
-      id: localId("G"),
-      currentAmount: 0,
-      status: "active",
-    }
 
-    if (isSupabaseConfigured && supabase && currentUser?.id && currentUser.id.includes('-')) {
-      try {
-        const { data, error } = await supabase.from('goals').insert([{
-          user_id: currentUser.id,
-          title: item.title,
-          category: item.category,
-          target_amount: item.targetAmount,
-          current_amount: 0,
-          deadline: item.deadline,
-          status: 'active',
-        }]).select().single()
-
-        if (!error && data) {
-          newGoal = {
-            id: data.id,
-            title: data.title,
-            category: data.category,
-            targetAmount: Number(data.target_amount),
-            currentAmount: Number(data.current_amount),
-            deadline: data.deadline || item.deadline,
-            status: data.status as GoalRecord["status"],
-          }
-        } else if (error) {
-          console.error("Supabase goal insert error:", error)
-        }
-      } catch (err) {
-        console.warn("Supabase goal insert exception:", err)
+    if (isSupabaseConfigured && supabase) {
+      if (!currentUser?.id || !currentUser.id.includes("-")) {
+        throw new Error("Sesi tidak valid. Silakan login ulang.")
       }
+      const { data, error } = await supabase.from('goals').insert([{
+        user_id: currentUser.id,
+        title: item.title,
+        category: item.category,
+        target_amount: item.targetAmount,
+        current_amount: 0,
+        deadline: item.deadline,
+        status: 'active',
+      }]).select().single()
+
+      if (error || !data) {
+        console.error("Supabase goal insert error:", error)
+        throw new Error("Gagal menambah target. Coba lagi.")
+      }
+
+      const newGoal: GoalRecord = {
+        id: data.id,
+        title: data.title,
+        category: data.category,
+        targetAmount: Number(data.target_amount),
+        currentAmount: Number(data.current_amount),
+        deadline: data.deadline || item.deadline,
+        status: data.status as GoalRecord["status"],
+      }
+      const list = await this.getAll()
+      const updated = [newGoal, ...list.filter(g => g.id !== newGoal.id)]
+      if (typeof window !== "undefined") {
+        localStorage.setItem(getUserStorageKey(BASE_STORAGE_KEYS.GOALS), JSON.stringify(updated))
+      }
+      return newGoal
     }
 
+    // Mode lokal murni (Supabase TIDAK dikonfigurasi sama sekali).
+    const newGoal: GoalRecord = { ...item, id: localId("G"), currentAmount: 0, status: "active" }
     const list = await this.getAll()
     const updated = [newGoal, ...list.filter(g => g.id !== newGoal.id)]
     if (typeof window !== "undefined") {
-      const key = getUserStorageKey(BASE_STORAGE_KEYS.GOALS)
-      localStorage.setItem(key, JSON.stringify(updated))
+      localStorage.setItem(getUserStorageKey(BASE_STORAGE_KEYS.GOALS), JSON.stringify(updated))
     }
     return newGoal
   },
 
+  /** @throws Error kalau Supabase dikonfigurasi tapi update/insert gagal — setoran
+   *  TIDAK ditandai berhasil di cache lokal kalau server menolaknya. */
   async deposit(goalId: string, amount: number, accountName: string): Promise<void> {
     const list = await this.getAll()
     const targetGoal = list.find((g) => g.id === goalId)
@@ -1269,13 +1315,18 @@ export const goalService = {
       nextAmt >= targetGoal.targetAmount ? "completed" : nextAmt / targetGoal.targetAmount >= 0.75 ? "almost" : "active"
 
     if (isSupabaseConfigured && supabase && goalId.includes("-")) {
-      try {
-        await supabase
-          .from("goals")
-          .update({ current_amount: nextAmt, status: nextStatus })
-          .eq("id", goalId)
+      const { error: goalErr } = await supabase
+        .from("goals")
+        .update({ current_amount: nextAmt, status: nextStatus })
+        .eq("id", goalId)
+      if (goalErr) {
+        console.error("Supabase goal deposit error:", goalErr)
+        throw new Error("Gagal mencatat setoran. Coba lagi.")
+      }
 
-        // Catat riwayat setoran ke saving_logs (RLS: goal milik user).
+      // Catat riwayat setoran ke saving_logs (RLS: goal milik user). Ini best-effort
+      // (histori pelengkap) — goal utama sudah tersimpan di atas.
+      try {
         const accs = await accountService.getAll()
         const accId = accs.find((a) => a.name === accountName)?.id || null
         await supabase.from("saving_logs").insert([
@@ -1288,7 +1339,7 @@ export const goalService = {
           },
         ])
       } catch (err) {
-        console.warn("Supabase goal deposit error:", err)
+        console.warn("saving_logs insert gagal (setoran tetap tercatat di goal):", err)
       }
     }
 
@@ -1302,18 +1353,25 @@ export const goalService = {
       )
     }
 
-    // Auto-catat ke transaksi pribadi (mengurangi saldo akun sumber).
-    const accts = await accountService.getAll()
-    await transactionService.add({
-      title: `Setoran Tabungan: ${targetGoal.title}`,
-      category: "Tabungan & Target",
-      type: "out",
-      amount,
-      account: resolvePersonalAccount(accts, accountName),
-      date: todayLocalISO(),
-      formattedDate: formatIdDate(new Date()),
-      notes: `Setoran otomatis ke target ${targetGoal.title} [#auto]`,
-    })
+    // Auto-catat ke transaksi pribadi (mengurangi saldo akun sumber). Setoran
+    // ke target sendiri (goals/saving_logs) sudah tersimpan di atas — kalau
+    // auto-log ke transaksi pribadi ini gagal, jangan gagalkan seluruh setoran
+    // (cuma catatan pelengkap); log saja supaya bisa ditelusuri.
+    try {
+      const accts = await accountService.getAll()
+      await transactionService.add({
+        title: `Setoran Tabungan: ${targetGoal.title}`,
+        category: "Tabungan & Target",
+        type: "out",
+        amount,
+        account: resolvePersonalAccount(accts, accountName),
+        date: todayLocalISO(),
+        formattedDate: formatIdDate(new Date()),
+        notes: `Setoran otomatis ke target ${targetGoal.title} [#auto]`,
+      })
+    } catch (err) {
+      console.error("goal deposit: auto-log ke transaksi pribadi gagal:", err)
+    }
   },
 
   /** Ubah detail target (judul, kategori, nominal target, tenggat). Status
@@ -1334,20 +1392,20 @@ export const goalService = {
           : "active"
 
     if (isSupabaseConfigured && supabase && id.includes("-")) {
-      try {
-        const upd: Record<string, unknown> = {}
-        if (patch.title !== undefined) upd.title = patch.title
-        if (patch.category !== undefined) upd.category = patch.category
-        if (patch.deadline !== undefined) upd.deadline = patch.deadline
-        if (patch.targetAmount !== undefined) {
-          upd.target_amount = patch.targetAmount
-          upd.status = status
+      const upd: Record<string, unknown> = {}
+      if (patch.title !== undefined) upd.title = patch.title
+      if (patch.category !== undefined) upd.category = patch.category
+      if (patch.deadline !== undefined) upd.deadline = patch.deadline
+      if (patch.targetAmount !== undefined) {
+        upd.target_amount = patch.targetAmount
+        upd.status = status
+      }
+      if (Object.keys(upd).length) {
+        const { error } = await supabase.from("goals").update(upd).eq("id", id)
+        if (error) {
+          console.error("goal update error:", error)
+          throw new Error("Gagal menyimpan perubahan target. Coba lagi.")
         }
-        if (Object.keys(upd).length) {
-          await supabase.from("goals").update(upd).eq("id", id)
-        }
-      } catch (err) {
-        console.warn("goal update exception:", err)
       }
     }
 
@@ -1366,10 +1424,10 @@ export const goalService = {
    */
   async remove(id: string): Promise<void> {
     if (isSupabaseConfigured && supabase && id.includes("-")) {
-      try {
-        await supabase.from("goals").delete().eq("id", id)
-      } catch (err) {
-        console.warn("goal remove exception:", err)
+      const { error } = await supabase.from("goals").delete().eq("id", id)
+      if (error) {
+        console.error("goal remove error:", error)
+        throw new Error("Gagal menghapus target. Coba lagi.")
       }
     }
     const list = await this.getAll()
@@ -1390,26 +1448,54 @@ export const scheduledService = {
       try {
         const { data, error } = await supabase
           .from('scheduled_payments')
-          .select('*')
+          .select('*, accounts(name)')
           .eq('user_id', currentUser.id)
           .order('created_at', { ascending: false })
 
         if (!error && data) {
-          const meta = readScheduledMeta()
-          const mapped: ScheduledBillRecord[] = data.map((b) => ({
-            id: b.id,
-            title: b.title,
-            amount: Number(b.amount),
-            date: b.due_date,
-            formattedDate: formatIdDate(b.due_date),
-            category: b.category,
-            account: meta[b.id as string]?.account || "Bank BCA",
-            status: b.status || "pending",
-            notes: meta[b.id as string]?.notes || "",
-          }))
+          // Sidecar SCHEDULED_META lama — hanya untuk backfill sekali dari device
+          // yang masih punya cache lama. Sumber kebenaran sekarang kolom asli
+          // (`account_id`, `notes`), sinkron antar device.
+          const legacyMeta = readScheduledMeta()
+          const backfills: Array<{ id: string; accountName?: string; notes?: string }> = []
+          const mapped: ScheduledBillRecord[] = data.map((b) => {
+            const legacy = legacyMeta[b.id as string]
+            const accountName = (b.accounts as { name?: string } | null)?.name
+            const account = accountName || legacy?.account || "Bank BCA"
+            const notes = (b.notes as string) || legacy?.notes || ""
+            if (!accountName && !b.notes && legacy) {
+              backfills.push({ id: b.id as string, accountName: legacy.account, notes: legacy.notes })
+            }
+            return {
+              id: b.id,
+              title: b.title,
+              amount: Number(b.amount),
+              date: b.due_date,
+              formattedDate: formatIdDate(b.due_date),
+              category: b.category,
+              account,
+              status: b.status || "pending",
+              notes,
+            }
+          })
           if (typeof window !== "undefined") {
             const key = getUserStorageKey(BASE_STORAGE_KEYS.SCHEDULED)
             localStorage.setItem(key, JSON.stringify(mapped))
+          }
+          // Backfill best-effort (tak diblokir pemanggil).
+          for (const b of backfills) {
+            ;(async () => {
+              const upd: Record<string, unknown> = {}
+              if (b.notes) upd.notes = b.notes
+              if (b.accountName) {
+                const accs = await accountService.getAll()
+                const accId = accs.find((a) => a.name === b.accountName)?.id
+                if (accId && accId.includes("-")) upd.account_id = accId
+              }
+              if (Object.keys(upd).length) {
+                await supabase.from("scheduled_payments").update(upd).eq("id", b.id)
+              }
+            })()
           }
           return mapped
         }
@@ -1429,66 +1515,77 @@ export const scheduledService = {
     }
   },
 
+  /** @throws Error kalau Supabase dikonfigurasi tapi insert gagal. */
   async add(item: Omit<ScheduledBillRecord, "id">): Promise<ScheduledBillRecord> {
     const currentUser = authService.getCurrentUser()
-    let newBill: ScheduledBillRecord = {
-      ...item,
-      id: localId("SCH"),
-    }
 
-    if (isSupabaseConfigured && supabase && currentUser?.id && currentUser.id.includes('-')) {
-      try {
-        const { data, error } = await supabase.from('scheduled_payments').insert([{
-          user_id: currentUser.id,
-          title: item.title,
-          category: item.category,
-          amount: item.amount,
-          due_date: item.date,
-          status: item.status || 'pending'
-        }]).select().single()
-
-        if (!error && data) {
-          newBill = {
-            id: data.id,
-            title: data.title,
-            amount: Number(data.amount),
-            date: data.due_date,
-            formattedDate: item.formattedDate,
-            category: data.category,
-            account: item.account,
-            status: data.status as "pending" | "paid",
-            notes: item.notes,
-          }
-        } else if (error) {
-          console.error("Supabase scheduled payment insert error:", error)
-        }
-      } catch (err) {
-        console.warn("Supabase scheduled payment insert fallback:", err)
+    if (isSupabaseConfigured && supabase) {
+      if (!currentUser?.id || !currentUser.id.includes("-")) {
+        throw new Error("Sesi tidak valid. Silakan login ulang.")
       }
+      let accountId: string | null = null
+      if (item.account) {
+        const accs = await accountService.getAll()
+        accountId = accs.find((a) => a.name === item.account)?.id || null
+        if (accountId && !accountId.includes("-")) accountId = null
+      }
+
+      const { data, error } = await supabase.from('scheduled_payments').insert([{
+        user_id: currentUser.id,
+        title: item.title,
+        category: item.category,
+        amount: item.amount,
+        due_date: item.date,
+        status: item.status || 'pending',
+        account_id: accountId,
+        notes: item.notes || null,
+      }]).select('*, accounts(name)').single()
+
+      if (error || !data) {
+        console.error("Supabase scheduled payment insert error:", error)
+        throw new Error("Gagal menambah jadwal tagihan. Coba lagi.")
+      }
+
+      const newBill: ScheduledBillRecord = {
+        id: data.id,
+        title: data.title,
+        amount: Number(data.amount),
+        date: data.due_date,
+        formattedDate: item.formattedDate,
+        category: data.category,
+        account: (data.accounts as { name?: string } | null)?.name || item.account,
+        status: data.status as "pending" | "paid",
+        notes: (data.notes as string) || item.notes,
+      }
+      const list = await this.getAll()
+      const updated = [newBill, ...list.filter(b => b.id !== newBill.id)]
+      if (typeof window !== "undefined") {
+        localStorage.setItem(getUserStorageKey(BASE_STORAGE_KEYS.SCHEDULED), JSON.stringify(updated))
+      }
+      return newBill
     }
 
-    // Simpan account + notes di sidecar (tak ada kolomnya di tabel).
-    writeScheduledMeta(newBill.id, { account: item.account, notes: item.notes })
-
+    // Mode lokal murni (Supabase TIDAK dikonfigurasi sama sekali).
+    const newBill: ScheduledBillRecord = { ...item, id: localId("SCH") }
     const list = await this.getAll()
     const updated = [newBill, ...list.filter(b => b.id !== newBill.id)]
     if (typeof window !== "undefined") {
-      const key = getUserStorageKey(BASE_STORAGE_KEYS.SCHEDULED)
-      localStorage.setItem(key, JSON.stringify(updated))
+      localStorage.setItem(getUserStorageKey(BASE_STORAGE_KEYS.SCHEDULED), JSON.stringify(updated))
     }
     return newBill
   },
 
+  /** @throws Error kalau Supabase dikonfigurasi tapi update status gagal. */
   async pay(id: string): Promise<void> {
     const list = await this.getAll()
     const target = list.find((b) => b.id === id)
     if (!target) return
 
     if (isSupabaseConfigured && supabase && id.includes('-')) {
-      try {
-        await supabase.from('scheduled_payments').update({ status: 'paid' }).eq('id', id)
-      } catch (err) {
-        console.warn("Supabase scheduled payment pay fallback:", err)
+      const { error } = await supabase.from('scheduled_payments').update({ status: 'paid' }).eq('id', id)
+      if (error) {
+        console.error("Supabase scheduled payment pay error:", error)
+        throw new Error("Gagal menandai tagihan lunas. Coba lagi.")
       }
     }
 
@@ -1498,18 +1595,24 @@ export const scheduledService = {
       localStorage.setItem(key, JSON.stringify(updated))
     }
 
-    // Auto-catat ke transaksi pribadi (mengurangi saldo akun).
-    const accts = await accountService.getAll()
-    await transactionService.add({
-      title: `Pembayaran Tagihan: ${target.title}`,
-      category: target.category,
-      type: "out",
-      amount: target.amount,
-      account: resolvePersonalAccount(accts, target.account),
-      date: todayLocalISO(),
-      formattedDate: formatIdDate(new Date()),
-      notes: `${target.notes || `Pelunasan jadwal tagihan ${target.title}`} [#auto]`,
-    })
+    // Auto-catat ke transaksi pribadi (mengurangi saldo akun). Status tagihan
+    // (scheduled_payments) sudah "paid" di atas — kalau auto-log ini gagal,
+    // jangan gagalkan seluruh aksi bayar; log saja supaya bisa ditelusuri.
+    try {
+      const accts = await accountService.getAll()
+      await transactionService.add({
+        title: `Pembayaran Tagihan: ${target.title}`,
+        category: target.category,
+        type: "out",
+        amount: target.amount,
+        account: resolvePersonalAccount(accts, target.account),
+        date: todayLocalISO(),
+        formattedDate: formatIdDate(new Date()),
+        notes: `${target.notes || `Pelunasan jadwal tagihan ${target.title}`} [#auto]`,
+      })
+    } catch (err) {
+      console.error("scheduled pay: auto-log ke transaksi pribadi gagal:", err)
+    }
   },
 
   /** Ubah detail jadwal tagihan (judul, kategori, nominal, tempo, akun, catatan). */
@@ -1522,22 +1625,24 @@ export const scheduledService = {
     if (!before) return
 
     if (isSupabaseConfigured && supabase && id.includes("-")) {
-      try {
-        const upd: Record<string, unknown> = {}
-        if (patch.title !== undefined) upd.title = patch.title
-        if (patch.category !== undefined) upd.category = patch.category
-        if (patch.amount !== undefined) upd.amount = patch.amount
-        if (patch.date !== undefined) upd.due_date = toISODate(patch.date)
-        if (Object.keys(upd).length) {
-          await supabase.from("scheduled_payments").update(upd).eq("id", id)
-        }
-      } catch (err) {
-        console.warn("scheduled update exception:", err)
+      const upd: Record<string, unknown> = {}
+      if (patch.title !== undefined) upd.title = patch.title
+      if (patch.category !== undefined) upd.category = patch.category
+      if (patch.amount !== undefined) upd.amount = patch.amount
+      if (patch.notes !== undefined) upd.notes = patch.notes
+      if (patch.account !== undefined) {
+        const accs = await accountService.getAll()
+        const accId = accs.find((a) => a.name === patch.account)?.id
+        upd.account_id = accId && accId.includes("-") ? accId : null
       }
-    }
-
-    if (patch.account !== undefined || patch.notes !== undefined) {
-      writeScheduledMeta(id, { account: patch.account, notes: patch.notes })
+      if (patch.date !== undefined) upd.due_date = toISODate(patch.date)
+      if (Object.keys(upd).length) {
+        const { error } = await supabase.from("scheduled_payments").update(upd).eq("id", id)
+        if (error) {
+          console.error("scheduled update error:", error)
+          throw new Error("Gagal menyimpan perubahan jadwal tagihan. Coba lagi.")
+        }
+      }
     }
 
     const updated = list.map((b) =>
@@ -1558,23 +1663,16 @@ export const scheduledService = {
    *  log pribadi tetap ada. */
   async remove(id: string): Promise<void> {
     if (isSupabaseConfigured && supabase && id.includes("-")) {
-      try {
-        await supabase.from("scheduled_payments").delete().eq("id", id)
-      } catch (err) {
-        console.warn("scheduled remove exception:", err)
+      const { error } = await supabase.from("scheduled_payments").delete().eq("id", id)
+      if (error) {
+        console.error("scheduled remove error:", error)
+        throw new Error("Gagal menghapus jadwal tagihan. Coba lagi.")
       }
     }
     const list = await this.getAll()
     const updated = list.filter((b) => b.id !== id)
     if (typeof window !== "undefined") {
       localStorage.setItem(getUserStorageKey(BASE_STORAGE_KEYS.SCHEDULED), JSON.stringify(updated))
-      try {
-        const meta = readScheduledMeta()
-        delete meta[id]
-        localStorage.setItem(BASE_STORAGE_KEYS.SCHEDULED_META, JSON.stringify(meta))
-      } catch {
-        // ignore
-      }
     }
   },
 }
@@ -1582,7 +1680,7 @@ export const scheduledService = {
 // Helper: ubah teks tanggal bebas ("25 Aug 2026", "2026-08-25", dll) → "YYYY-MM-DD".
 // Kolom `due_date` di Postgres bertipe date, jadi harus format valid; kalau gagal
 // diparse, pakai tanggal hari ini.
-function toISODate(input: string): string {
+export function toISODate(input: string): string {
   const parsed = new Date(input)
   if (!isNaN(parsed.getTime())) {
     return todayLocalISO(parsed)
@@ -1675,71 +1773,68 @@ export const kamarService = {
     }
   },
 
+  /** @throws Error kalau Supabase dikonfigurasi tapi pembuatan kamar gagal —
+   *  TIDAK LAGI diam-diam mengembalikan kamar lokal palsu yang tak pernah ada
+   *  di server (anggota lain tak akan pernah melihatnya). */
   async createRoom(name: string, location?: string, monthlyFee: number = 200000, maxMembers: number = 4): Promise<KamarRoomRecord> {
     const currentUser = authService.getCurrentUser()
     const code = `KOS-${Math.floor(100 + Math.random() * 900)}`
 
-    let newRoom: KamarRoomRecord = {
-      id: localId("ROOM"),
-      name,
-      code,
-      location,
-      monthlyFee,
-      maxMembers,
-      role: "Ketua Kos",
-    }
-
     if (isSupabaseConfigured && supabase) {
-      try {
-        const { data: authUser } = await supabase.auth.getUser()
-        const sbUserId = authUser?.user?.id || currentUser?.id
-
-        if (sbUserId && sbUserId.includes('-')) {
-          const { data, error } = await supabase.from('rooms').insert([{
-            name,
-            invite_code: code,
-            location: location || '',
-            monthly_fee: monthlyFee,
-            max_members: maxMembers,
-            created_by: sbUserId
-          }]).select().single()
-
-          if (error) {
-            console.error("Supabase createRoom insert error:", error)
-          } else if (data) {
-            // Tambahkan pembuat sebagai Ketua Kos. Kalau gagal, hapus room yatim.
-            const { error: memberErr } = await supabase.from('room_members').insert([{
-              room_id: data.id,
-              user_id: sbUserId,
-              user_name: currentUser?.fullName || 'Saya',
-              role: 'Ketua Kos',
-              room_number: 'Kamar 01'
-            }])
-
-            if (memberErr) {
-              console.error("Supabase createRoom member insert error, rolling back room:", memberErr)
-              await supabase.from('rooms').delete().eq('id', data.id)
-            } else {
-              newRoom = {
-                id: data.id,
-                name: data.name,
-                code: data.invite_code || data.code || code,
-                location: data.location,
-                monthlyFee: data.monthly_fee,
-                maxMembers: data.max_members,
-                role: "Ketua Kos",
-              }
-            }
-          }
-        }
-      } catch (err) {
-        console.error("Supabase room create exception:", err)
+      const { data: authUser } = await supabase.auth.getUser()
+      const sbUserId = authUser?.user?.id || currentUser?.id
+      if (!sbUserId || !sbUserId.includes("-")) {
+        throw new Error("Sesi tidak valid. Silakan login ulang.")
       }
+
+      const { data, error } = await supabase.from('rooms').insert([{
+        name,
+        invite_code: code,
+        location: location || '',
+        monthly_fee: monthlyFee,
+        max_members: maxMembers,
+        created_by: sbUserId
+      }]).select().single()
+
+      if (error || !data) {
+        console.error("Supabase createRoom insert error:", error)
+        throw new Error("Gagal membuat kamar. Coba lagi.")
+      }
+
+      // Tambahkan pembuat sebagai Ketua Kos. Kalau gagal, hapus room yatim.
+      const { error: memberErr } = await supabase.from('room_members').insert([{
+        room_id: data.id,
+        user_id: sbUserId,
+        user_name: currentUser?.fullName || 'Saya',
+        role: 'Ketua Kos',
+        room_number: 'Kamar 01'
+      }])
+      if (memberErr) {
+        console.error("Supabase createRoom member insert error, rolling back room:", memberErr)
+        await supabase.from('rooms').delete().eq('id', data.id)
+        throw new Error("Gagal membuat kamar. Coba lagi.")
+      }
+
+      const newRoom: KamarRoomRecord = {
+        id: data.id,
+        name: data.name,
+        code: data.invite_code || data.code || code,
+        location: data.location,
+        monthlyFee: data.monthly_fee,
+        maxMembers: data.max_members,
+        role: "Ketua Kos",
+      }
+      if (typeof window !== "undefined") {
+        localStorage.setItem(getUserStorageKey(BASE_STORAGE_KEYS.ROOM), JSON.stringify(newRoom))
+        window.dispatchEvent(new Event("room-updated"))
+      }
+      return newRoom
     }
 
+    // Mode lokal murni (Supabase TIDAK dikonfigurasi sama sekali).
+    const newRoom: KamarRoomRecord = { id: localId("ROOM"), name, code, location, monthlyFee, maxMembers, role: "Ketua Kos" }
     if (typeof window !== "undefined") {
-      const key = getUserStorageKey(BASE_STORAGE_KEYS.ROOM)
-      localStorage.setItem(key, JSON.stringify(newRoom))
+      localStorage.setItem(getUserStorageKey(BASE_STORAGE_KEYS.ROOM), JSON.stringify(newRoom))
       window.dispatchEvent(new Event("room-updated"))
     }
     return newRoom
@@ -2141,7 +2236,7 @@ export const kamarService = {
 
     // Simpan akun penalang (dipakai rekonsiliasi) — hanya jika penalang = saya.
     if (item.paidByUserId === myId && item.payerAccount) {
-      writeSplitMeta(newTx.id, item.payerAccount)
+      await writePayerAccount(newTx.id, item.payerAccount)
     }
 
     const list = await this.getSharedTransactions()
@@ -2223,7 +2318,7 @@ export const kamarService = {
 
       const txId = data as string
       if (input.paidByUserId === myId && input.payerAccount) {
-        writeSplitMeta(txId, input.payerAccount)
+        await writePayerAccount(txId, input.payerAccount)
       }
 
       // Segarkan cache & catat pengeluaran "bagian saya" ke transaksi pribadi.
@@ -2413,7 +2508,7 @@ export const kamarService = {
           }
         }
 
-        if (payerId === myId && patch.payerAccount) writeSplitMeta(txId, patch.payerAccount)
+        if (payerId === myId && patch.payerAccount) await writePayerAccount(txId, patch.payerAccount)
       } catch (err) {
         console.warn("updateSharedTransaction exception:", err)
         return { error: "Tidak bisa terhubung ke server." }
@@ -2509,10 +2604,13 @@ export const kamarService = {
     const seen = new Set<string>()
     for (const n of await transactionService._rawNotes()) collectLedgerRefs(n, seen)
 
+    // splitMeta = sidecar LEGACY (pra-kolom `payer_account_id`), dipakai hanya
+    // untuk baris lama yang belum punya kolomnya terisi.
     const splitMeta = readSplitMeta()
     const accounts = await accountService.getAll()
     const nameMap = await this._memberNameMap(room.id)
     const resolveAcct = (preferred?: string) => resolvePersonalAccount(accounts, preferred)
+    const acctNameById = (id?: string | null) => accounts.find((a) => a.id === id)?.name
 
     type Split = { id: string; user_id: string; amount_owed: number; is_settled: boolean }
     type RTx = {
@@ -2521,6 +2619,7 @@ export const kamarService = {
       total_amount: number
       per_person_amount: number
       paid_by_user_id: string
+      payer_account_id?: string | null
       room_transaction_splits: Split[]
     }
     let rows: RTx[] = []
@@ -2528,7 +2627,7 @@ export const kamarService = {
     if (isSupabaseConfigured && supabase && myId.includes("-") && room.id.includes("-")) {
       const { data, error } = await supabase
         .from("room_transactions")
-        .select("id, title, total_amount, per_person_amount, paid_by_user_id, room_transaction_splits(id, user_id, amount_owed, is_settled)")
+        .select("id, title, total_amount, per_person_amount, paid_by_user_id, payer_account_id, room_transaction_splits(id, user_id, amount_owed, is_settled)")
         .eq("room_id", room.id)
       if (error || !data) return
       rows = data as RTx[]
@@ -2589,19 +2688,32 @@ export const kamarService = {
           : 0
       if (shareAmount <= 0) continue
 
-      await transactionService.add({
-        title: `Split Bill Kos: ${t.title}`,
-        category: "Kamar Kos",
-        type: "out",
-        amount: shareAmount,
-        account: resolveAcct(iAmPayer ? splitMeta[t.id]?.account : undefined),
-        date: todayLocalISO(),
-        formattedDate: formatIdDate(new Date()),
-        notes: iAmPayer
-          ? `Bagian saya dari tagihan bersama "${t.title}" ${ledgerRef("sbS", key)}`
-          : `Bayar bagian saya ke ${nameMap.get(t.paid_by_user_id) || "penalang"} untuk "${t.title}" ${ledgerRef("sbS", key)}`,
-      })
-      seen.add(refKey("sbS", key))
+      // Akun penalang: kolom `payer_account_id` (sinkron antar device) kalau
+      // sudah ada, kalau tidak jatuh ke sidecar lokal lama (baris pra-migrasi).
+      const payerAccountName = iAmPayer
+        ? acctNameById(t.payer_account_id) || splitMeta[t.id]?.account
+        : undefined
+
+      // Auto-log ini "bagian saya" dari split bill kos — kalau gagal (jaringan/
+      // RLS), jangan gagalkan seluruh reconcile (dipanggil tiap halaman kamar
+      // dibuka); lanjut ke transaksi berikutnya, coba lagi di reconcile berikutnya.
+      try {
+        await transactionService.add({
+          title: `Split Bill Kos: ${t.title}`,
+          category: "Kamar Kos",
+          type: "out",
+          amount: shareAmount,
+          account: resolveAcct(payerAccountName),
+          date: todayLocalISO(),
+          formattedDate: formatIdDate(new Date()),
+          notes: iAmPayer
+            ? `Bagian saya dari tagihan bersama "${t.title}" ${ledgerRef("sbS", key)}`
+            : `Bayar bagian saya ke ${nameMap.get(t.paid_by_user_id) || "penalang"} untuk "${t.title}" ${ledgerRef("sbS", key)}`,
+        })
+        seen.add(refKey("sbS", key))
+      } catch (err) {
+        console.error("reconcileRoomLedger: auto-log split bill gagal untuk tx", t.id, err)
+      }
     }
   },
 
@@ -2726,6 +2838,9 @@ export const kamarService = {
    * Menggantikan penulisan langsung `localStorage["myfinance_db_requirements"]`
    * (key mentah) yang sebelumnya bikin data langsung hilang.
    */
+  /** @throws Error kalau Supabase dikonfigurasi tapi insert gagal — TIDAK LAGI
+   *  diam-diam mengembalikan kebutuhan lokal palsu yang tak pernah dilihat
+   *  anggota kamar lain (fitur ini SHARED, jadi bug ini sangat terasa). */
   async addRequirement(item: {
     title: string
     category: string
@@ -2740,7 +2855,59 @@ export const kamarService = {
       item.perPersonPrice ??
       Math.ceil(item.totalPrice / Math.max(1, item.splitPeopleCount))
 
-    let newReq: RequirementRecord = {
+    if (isSupabaseConfigured && supabase) {
+      if (!room?.id || !room.id.includes("-")) {
+        throw new Error("Kamar tidak valid. Muat ulang halaman.")
+      }
+      // Petakan nama penanggung jawab → user_id anggota kamar (kalau ada).
+      const members = await this.getRoomMembers(room.id)
+      const responsibleId =
+        members.find((m) => m.name === item.responsiblePerson)?.userId || null
+
+      const { data, error } = await supabase
+        .from("room_requirements")
+        .insert([
+          {
+            room_id: room.id,
+            title: item.title,
+            category: item.category,
+            total_price: item.totalPrice,
+            split_people_count: item.splitPeopleCount,
+            per_person_price: perPerson,
+            due_date: toISODate(item.dueDate),
+            responsible_user_id:
+              responsibleId && responsibleId.includes("-") ? responsibleId : null,
+          },
+        ])
+        .select()
+        .single()
+
+      if (error || !data) {
+        console.error("Supabase addRequirement insert error:", error)
+        throw new Error("Gagal menambah kebutuhan bulanan. Coba lagi.")
+      }
+
+      const newReq: RequirementRecord = {
+        id: data.id,
+        title: data.title,
+        category: data.category,
+        totalPrice: Number(data.total_price),
+        splitPeopleCount: Number(data.split_people_count) || item.splitPeopleCount,
+        perPersonPrice: Number(data.per_person_price),
+        dueDate: item.dueDate,
+        responsiblePerson: item.responsiblePerson,
+        isPaidByMe: false,
+      }
+      const list = await this.getRequirements()
+      const updated = [newReq, ...list.filter((r) => r.id !== newReq.id)]
+      if (typeof window !== "undefined") {
+        localStorage.setItem(getUserStorageKey(BASE_STORAGE_KEYS.REQUIREMENTS), JSON.stringify(updated))
+      }
+      return newReq
+    }
+
+    // Mode lokal murni (Supabase TIDAK dikonfigurasi sama sekali).
+    const newReq: RequirementRecord = {
       id: localId("REQ"),
       title: item.title,
       category: item.category,
@@ -2751,59 +2918,10 @@ export const kamarService = {
       responsiblePerson: item.responsiblePerson,
       isPaidByMe: false,
     }
-
-    if (isSupabaseConfigured && supabase && room?.id && room.id.includes("-")) {
-      try {
-        // Petakan nama penanggung jawab → user_id anggota kamar (kalau ada).
-        const members = await this.getRoomMembers(room.id)
-        const responsibleId =
-          members.find((m) => m.name === item.responsiblePerson)?.userId || null
-
-        const { data, error } = await supabase
-          .from("room_requirements")
-          .insert([
-            {
-              room_id: room.id,
-              title: item.title,
-              category: item.category,
-              total_price: item.totalPrice,
-              split_people_count: item.splitPeopleCount,
-              per_person_price: perPerson,
-              due_date: toISODate(item.dueDate),
-              responsible_user_id:
-                responsibleId && responsibleId.includes("-") ? responsibleId : null,
-            },
-          ])
-          .select()
-          .single()
-
-        if (!error && data) {
-          newReq = {
-            id: data.id,
-            title: data.title,
-            category: data.category,
-            totalPrice: Number(data.total_price),
-            splitPeopleCount: Number(data.split_people_count) || item.splitPeopleCount,
-            perPersonPrice: Number(data.per_person_price),
-            dueDate: item.dueDate,
-            responsiblePerson: item.responsiblePerson,
-            isPaidByMe: false,
-          }
-        } else if (error) {
-          console.error("Supabase addRequirement insert error:", error)
-        }
-      } catch (err) {
-        console.warn("Supabase addRequirement exception:", err)
-      }
-    }
-
     const list = await this.getRequirements()
     const updated = [newReq, ...list.filter((r) => r.id !== newReq.id)]
     if (typeof window !== "undefined") {
-      localStorage.setItem(
-        getUserStorageKey(BASE_STORAGE_KEYS.REQUIREMENTS),
-        JSON.stringify(updated),
-      )
+      localStorage.setItem(getUserStorageKey(BASE_STORAGE_KEYS.REQUIREMENTS), JSON.stringify(updated))
     }
     return newReq
   },

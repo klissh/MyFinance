@@ -65,6 +65,7 @@ import {
   Plus,
   ArrowLeftRight,
   CheckCircle2,
+  AlertTriangle,
   Pencil,
   Trash2,
 } from "lucide-react"
@@ -134,10 +135,10 @@ export default function FinancePage() {
   const formatNumberWithDots = formatInput
   const parseFormattedNumber = parseInput
 
-  const [notification, setNotification] = useState<string | null>(null)
+  const [notification, setNotification] = useState<{ msg: string; error?: boolean } | null>(null)
 
-  const showNotification = (msg: string) => {
-    setNotification(msg)
+  const showNotification = (msg: string, error = false) => {
+    setNotification({ msg, error })
     setTimeout(() => setNotification(null), 4000)
   }
 
@@ -151,27 +152,32 @@ export default function FinancePage() {
     setIsSubmittingAcc(true)
     const currentUser = authService.getCurrentUser()
 
-    const newAccountObj = await accountService.add({
-      name: newAccName,
-      type: newAccType,
-      accountCategory: newAccType.toLowerCase().includes("bank") ? "bank" : newAccType.toLowerCase().includes("wallet") ? "ewallet" : "cash",
-      balance: parsedBalance,
-      cardNumber: newAccNumber || "**** **** 0000",
-      cardHolder: (newAccCardHolder || currentUser?.fullName || "USER").toUpperCase(),
-      expiration: "12/29",
-      cardDesignType: newAccDesign,
-      cardNetwork: newAccNetwork,
-    })
+    try {
+      const newAccountObj = await accountService.add({
+        name: newAccName,
+        type: newAccType,
+        accountCategory: newAccType.toLowerCase().includes("bank") ? "bank" : newAccType.toLowerCase().includes("wallet") ? "ewallet" : "cash",
+        balance: parsedBalance,
+        cardNumber: newAccNumber || "**** **** 0000",
+        cardHolder: (newAccCardHolder || currentUser?.fullName || "USER").toUpperCase(),
+        expiration: "12/29",
+        cardDesignType: newAccDesign,
+        cardNetwork: newAccNetwork,
+      })
 
-    const updatedAccs = await accountService.getAll()
-    setAccounts(updatedAccs)
-    showNotification(`Sumber dana "${newAccountObj.name}" berhasil dibuat!`)
+      const updatedAccs = await accountService.getAll()
+      setAccounts(updatedAccs)
+      showNotification(`Sumber dana "${newAccountObj.name}" berhasil dibuat!`)
 
-    setNewAccName("")
-    setNewAccBalance("")
-    setNewAccNumber("")
-    setIsSubmittingAcc(false)
-    setIsAddDialogOpen(false)
+      setNewAccName("")
+      setNewAccBalance("")
+      setNewAccNumber("")
+      setIsAddDialogOpen(false)
+    } catch (err) {
+      showNotification(err instanceof Error ? err.message : "Gagal menambah sumber dana.", true)
+    } finally {
+      setIsSubmittingAcc(false)
+    }
   }
 
   const handleTransfer = async (e: React.FormEvent) => {
@@ -192,72 +198,83 @@ export default function FinancePage() {
     const newFromBalance = Math.max(0, fromAcc.balance - amt)
     const newToBalance = toAcc.balance + amt
 
-    // 1. Update account balances in Supabase & local storage
-    await accountService.updateBalanceByName(transferFrom, newFromBalance)
-    await accountService.updateBalanceByName(transferTo, newToBalance)
+    try {
+      // 1. Update account balances in Supabase & local storage
+      await accountService.updateBalanceByName(transferFrom, newFromBalance)
+      await accountService.updateBalanceByName(transferTo, newToBalance)
 
-    const dateObj = new Date()
-    const isoDate = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, "0")}-${String(dateObj.getDate()).padStart(2, "0")}`
-    const formattedDate = dateObj.toLocaleDateString("id-ID", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    })
+      const dateObj = new Date()
+      const isoDate = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, "0")}-${String(dateObj.getDate()).padStart(2, "0")}`
+      const formattedDate = dateObj.toLocaleDateString("id-ID", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      })
 
-    // 2. Record 2 transfer transactions (Outflow from source, Inflow to target).
-    //    adjustBalance: false — saldo sudah diset absolut di langkah 1.
-    await transactionService.add(
-      {
-        title: `Transfer ke ${transferTo}`,
-        category: "Transfer",
-        type: "out",
-        amount: amt,
-        account: transferFrom,
-        date: isoDate,
-        formattedDate: formattedDate,
-        notes: `Transfer saldo ke ${transferTo}`,
-      },
-      { adjustBalance: false },
-    )
+      // 2. Record 2 transfer transactions (Outflow from source, Inflow to target).
+      //    adjustBalance: false — saldo sudah diset absolut di langkah 1.
+      await transactionService.add(
+        {
+          title: `Transfer ke ${transferTo}`,
+          category: "Transfer",
+          type: "out",
+          amount: amt,
+          account: transferFrom,
+          date: isoDate,
+          formattedDate: formattedDate,
+          notes: `Transfer saldo ke ${transferTo}`,
+        },
+        { adjustBalance: false },
+      )
 
-    await transactionService.add(
-      {
-        title: `Transfer dari ${transferFrom}`,
-        category: "Transfer",
-        type: "in",
-        amount: amt,
-        account: transferTo,
-        date: isoDate,
-        formattedDate: formattedDate,
-        notes: `Transfer saldo masuk dari ${transferFrom}`,
-      },
-      { adjustBalance: false },
-    )
+      await transactionService.add(
+        {
+          title: `Transfer dari ${transferFrom}`,
+          category: "Transfer",
+          type: "in",
+          amount: amt,
+          account: transferTo,
+          date: isoDate,
+          formattedDate: formattedDate,
+          notes: `Transfer saldo masuk dari ${transferFrom}`,
+        },
+        { adjustBalance: false },
+      )
 
-    // 3. Refresh accounts & mutations list
-    const [updatedAccs, updatedTxs] = await Promise.all([
-      accountService.getAll(),
-      transactionService.getAll(),
-    ])
-    setAccounts(updatedAccs)
+      // 3. Refresh accounts & mutations list
+      const [updatedAccs, updatedTxs] = await Promise.all([
+        accountService.getAll(),
+        transactionService.getAll(),
+      ])
+      setAccounts(updatedAccs)
 
-    const formattedMutations: AccountMutation[] = updatedTxs.map((t) => ({
-      id: t.id,
-      accountName: t.account,
-      title: t.title,
-      type: t.type,
-      amount: t.amount,
-      date: t.formattedDate,
-    }))
-    setMutations(formattedMutations)
+      const formattedMutations: AccountMutation[] = updatedTxs.map((t) => ({
+        id: t.id,
+        accountName: t.account,
+        title: t.title,
+        type: t.type,
+        amount: t.amount,
+        date: t.formattedDate,
+      }))
+      setMutations(formattedMutations)
 
-    showNotification(
-      `Transfer ${fmt(amt)} dari "${transferFrom}" ke "${transferTo}" berhasil dicatat di mutasi!`
-    )
+      showNotification(
+        `Transfer ${fmt(amt)} dari "${transferFrom}" ke "${transferTo}" berhasil dicatat di mutasi!`
+      )
 
-    setTransferAmount("")
-    setIsSubmittingTransfer(false)
-    setIsTransferDialogOpen(false)
+      setTransferAmount("")
+      setIsTransferDialogOpen(false)
+    } catch (err) {
+      // Saldo mungkin sudah terlanjur berubah di langkah 1 walau transaksi transfer
+      // gagal dicatat — segarkan tampilan supaya user lihat kondisi sebenarnya.
+      setAccounts(await accountService.getAll())
+      showNotification(
+        err instanceof Error ? err.message : "Transfer gagal dicatat. Cek saldo & coba lagi.",
+        true,
+      )
+    } finally {
+      setIsSubmittingTransfer(false)
+    }
   }
 
   // ---- Edit / Delete Sumber Dana ----
@@ -290,56 +307,66 @@ export default function FinancePage() {
     if (isNaN(parsedBalance)) return
 
     setIsEditingAcc(true)
-    await accountService.update(editAcc.id, {
-      name: editName,
-      type: editType,
-      balance: parsedBalance,
-      cardNumber: editNumber || "**** **** 0000",
-      cardHolder: (editHolder || "USER").toUpperCase(),
-      cardDesignType: editDesign,
-      cardNetwork: editNetwork,
-    })
-    const [updatedAccs, updatedTxs] = await Promise.all([
-      accountService.getAll(),
-      transactionService.getAll(),
-    ])
-    setAccounts(updatedAccs)
-    setMutations(
-      updatedTxs.map((t) => ({
-        id: t.id,
-        accountName: t.account,
-        title: t.title,
-        type: t.type,
-        amount: t.amount,
-        date: t.formattedDate,
-      })),
-    )
-    setIsEditingAcc(false)
-    setEditAcc(null)
-    showNotification(`Sumber dana "${editName}" berhasil diperbarui.`)
+    try {
+      await accountService.update(editAcc.id, {
+        name: editName,
+        type: editType,
+        balance: parsedBalance,
+        cardNumber: editNumber || "**** **** 0000",
+        cardHolder: (editHolder || "USER").toUpperCase(),
+        cardDesignType: editDesign,
+        cardNetwork: editNetwork,
+      })
+      const [updatedAccs, updatedTxs] = await Promise.all([
+        accountService.getAll(),
+        transactionService.getAll(),
+      ])
+      setAccounts(updatedAccs)
+      setMutations(
+        updatedTxs.map((t) => ({
+          id: t.id,
+          accountName: t.account,
+          title: t.title,
+          type: t.type,
+          amount: t.amount,
+          date: t.formattedDate,
+        })),
+      )
+      setEditAcc(null)
+      showNotification(`Sumber dana "${editName}" berhasil diperbarui.`)
+    } catch (err) {
+      showNotification(err instanceof Error ? err.message : "Gagal memperbarui sumber dana.", true)
+    } finally {
+      setIsEditingAcc(false)
+    }
   }
 
   const handleDeleteAccount = async (acc: FinancialAccountRecord) => {
     setDeletingAccId(acc.id)
-    await accountService.remove(acc.id)
-    const [updatedAccs, updatedTxs] = await Promise.all([
-      accountService.getAll(),
-      transactionService.getAll(),
-    ])
-    setAccounts(updatedAccs)
-    setMutations(
-      updatedTxs.map((t) => ({
-        id: t.id,
-        accountName: t.account,
-        title: t.title,
-        type: t.type,
-        amount: t.amount,
-        date: t.formattedDate,
-      })),
-    )
-    if (selectedAccountFilter === acc.name) setSelectedAccountFilter("all")
-    setDeletingAccId(null)
-    showNotification(`Sumber dana "${acc.name}" dihapus.`)
+    try {
+      await accountService.remove(acc.id)
+      const [updatedAccs, updatedTxs] = await Promise.all([
+        accountService.getAll(),
+        transactionService.getAll(),
+      ])
+      setAccounts(updatedAccs)
+      setMutations(
+        updatedTxs.map((t) => ({
+          id: t.id,
+          accountName: t.account,
+          title: t.title,
+          type: t.type,
+          amount: t.amount,
+          date: t.formattedDate,
+        })),
+      )
+      if (selectedAccountFilter === acc.name) setSelectedAccountFilter("all")
+      showNotification(`Sumber dana "${acc.name}" dihapus.`)
+    } catch (err) {
+      showNotification(err instanceof Error ? err.message : "Gagal menghapus sumber dana.", true)
+    } finally {
+      setDeletingAccId(null)
+    }
   }
 
   const totalBalance = accounts.reduce((sum, a) => sum + a.balance, 0)
@@ -598,9 +625,19 @@ export default function FinancePage() {
       <div className="flex flex-1 flex-col gap-6 p-4 md:p-6 bg-background">
         {/* Toast Notification Banner */}
         {notification && (
-          <div className="flex items-center gap-2.5 rounded-xl border border-border bg-card px-3.5 py-3 text-xs text-foreground shadow-sm animate-in fade-in slide-in-from-top-2">
-            <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-            <span>{notification}</span>
+          <div
+            className={`flex items-center gap-2.5 rounded-xl border px-3.5 py-3 text-xs shadow-sm animate-in fade-in slide-in-from-top-2 ${
+              notification.error
+                ? "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400"
+                : "border-border bg-card text-foreground"
+            }`}
+          >
+            {notification.error ? (
+              <AlertTriangle className="size-4 shrink-0" />
+            ) : (
+              <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+            )}
+            <span>{notification.msg}</span>
           </div>
         )}
 

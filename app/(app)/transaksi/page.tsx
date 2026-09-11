@@ -86,6 +86,7 @@ import {
   Plus,
   Search,
   CheckCircle2,
+  AlertTriangle,
   Calendar as CalendarIcon,
   Pencil,
   Trash2,
@@ -147,7 +148,7 @@ export default function TransaksiPage() {
   const [newAccount, setNewAccount] = useState("")
   const [newSelectedDate, setNewSelectedDate] = useState<Date>(new Date())
   const [newNotes, setNewNotes] = useState("")
-  const [notification, setNotification] = useState<string | null>(null)
+  const [notification, setNotification] = useState<{ msg: string; error?: boolean } | null>(null)
 
   // Segarkan daftar sumber dana tiap kali dialog "Catat Transaksi" dibuka.
   useEffect(() => {
@@ -160,8 +161,8 @@ export default function TransaksiPage() {
     })
   }, [isAddDialogOpen])
 
-  const showNotification = (msg: string) => {
-    setNotification(msg)
+  const showNotification = (msg: string, error = false) => {
+    setNotification({ msg, error })
     setTimeout(() => setNotification(null), 4000)
   }
 
@@ -214,26 +215,31 @@ export default function TransaksiPage() {
       year: "numeric",
     })
 
-    await transactionService.add({
-      title: newTitle,
-      category: newCategory,
-      type: newType,
-      amount: parsedAmount,
-      account: newAccount,
-      date: isoDate,
-      formattedDate: formatted,
-      notes: newNotes,
-    })
+    try {
+      await transactionService.add({
+        title: newTitle,
+        category: newCategory,
+        type: newType,
+        amount: parsedAmount,
+        account: newAccount,
+        date: isoDate,
+        formattedDate: formatted,
+        notes: newNotes,
+      })
 
-    const refreshedList = await transactionService.getAll()
-    setTransactions(refreshedList)
-    showNotification(`Transaksi "${newTitle}" berhasil dicatat ke database!`)
+      const refreshedList = await transactionService.getAll()
+      setTransactions(refreshedList)
+      showNotification(`Transaksi "${newTitle}" berhasil dicatat ke database!`)
 
-    setNewTitle("")
-    setNewAmount("")
-    setNewNotes("")
-    setIsSubmitting(false)
-    setIsAddDialogOpen(false)
+      setNewTitle("")
+      setNewAmount("")
+      setNewNotes("")
+      setIsAddDialogOpen(false)
+    } catch (err) {
+      showNotification(err instanceof Error ? err.message : "Gagal menyimpan transaksi.", true)
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   // ---- Edit / Delete state ----
@@ -265,27 +271,37 @@ export default function TransaksiPage() {
     if (isNaN(amt) || amt <= 0) return
 
     setIsEditing(true)
-    await transactionService.update(editTx.id, {
-      title: editTitle,
-      category: editCategory,
-      type: editType,
-      amount: amt,
-      account: editAccount,
-      notes: editNotes,
-    })
-    await refreshTransactions()
-    setIsEditing(false)
-    setEditTx(null)
-    showNotification(`Transaksi "${editTitle}" berhasil diperbarui.`)
+    try {
+      await transactionService.update(editTx.id, {
+        title: editTitle,
+        category: editCategory,
+        type: editType,
+        amount: amt,
+        account: editAccount,
+        notes: editNotes,
+      })
+      await refreshTransactions()
+      setEditTx(null)
+      showNotification(`Transaksi "${editTitle}" berhasil diperbarui.`)
+    } catch (err) {
+      showNotification(err instanceof Error ? err.message : "Gagal memperbarui transaksi.", true)
+    } finally {
+      setIsEditing(false)
+    }
   }
 
   const handleDeleteTransaction = async (tx: TransactionItem) => {
     setDeletingId(tx.id)
     setConfirmDelete(null)
-    await transactionService.remove(tx.id)
-    await refreshTransactions()
-    setDeletingId(null)
-    showNotification(`Transaksi "${tx.title}" dihapus & saldo dikembalikan.`)
+    try {
+      await transactionService.remove(tx.id)
+      await refreshTransactions()
+      showNotification(`Transaksi "${tx.title}" dihapus & saldo dikembalikan.`)
+    } catch (err) {
+      showNotification(err instanceof Error ? err.message : "Gagal menghapus transaksi.", true)
+    } finally {
+      setDeletingId(null)
+    }
   }
 
   // Cluster aksi (edit + hapus) dipakai tabel desktop & daftar kartu mobile.
@@ -345,9 +361,19 @@ export default function TransaksiPage() {
       <div className="flex flex-1 flex-col gap-6 p-4 md:p-6 bg-background">
         {/* Toast Notification Banner */}
         {notification && (
-          <div className="flex items-center gap-2.5 rounded-xl border border-border bg-card px-3.5 py-3 text-xs text-foreground shadow-sm animate-in fade-in slide-in-from-top-2">
-            <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-            <span>{notification}</span>
+          <div
+            className={`flex items-center gap-2.5 rounded-xl border px-3.5 py-3 text-xs shadow-sm animate-in fade-in slide-in-from-top-2 ${
+              notification.error
+                ? "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400"
+                : "border-border bg-card text-foreground"
+            }`}
+          >
+            {notification.error ? (
+              <AlertTriangle className="size-4 shrink-0" />
+            ) : (
+              <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+            )}
+            <span>{notification.msg}</span>
           </div>
         )}
 

@@ -57,6 +57,7 @@ import {
   PiggyBank,
   Plus,
   CheckCircle2,
+  AlertTriangle,
   ChevronLeft,
   ChevronRight,
   Pencil,
@@ -95,10 +96,10 @@ export default function GoalsPage() {
   }, [])
 
   // Toast Notification State
-  const [notification, setNotification] = useState<string | null>(null)
+  const [notification, setNotification] = useState<{ msg: string; error?: boolean } | null>(null)
 
-  const showToastNotification = (message: string) => {
-    setNotification(message)
+  const showToastNotification = (message: string, error = false) => {
+    setNotification({ msg: message, error })
     setTimeout(() => setNotification(null), 4000)
   }
 
@@ -149,27 +150,32 @@ export default function GoalsPage() {
     if (isNaN(targetNum) || targetNum <= 0) return
 
     setIsSubmittingGoal(true)
-    const newGoalObj = await goalService.add({
-      title: newTitle,
-      category: newCategory,
-      targetAmount: targetNum,
-      deadline: newDeadline || "Des 2026",
-    })
+    try {
+      const newGoalObj = await goalService.add({
+        title: newTitle,
+        category: newCategory,
+        targetAmount: targetNum,
+        deadline: newDeadline || "Des 2026",
+      })
 
-    if (initDeposit > 0) {
-      await goalService.deposit(newGoalObj.id, initDeposit, newAccount)
+      if (initDeposit > 0) {
+        await goalService.deposit(newGoalObj.id, initDeposit, newAccount)
+      }
+
+      const refreshed = await goalService.getAll()
+      setGoals(refreshed)
+
+      showToastNotification(`Target impian "${newTitle}" berhasil dibuat!`)
+
+      setNewTitle("")
+      setNewTargetAmount("")
+      setNewInitialDeposit("")
+      setIsAddGoalOpen(false)
+    } catch (err) {
+      showToastNotification(err instanceof Error ? err.message : "Gagal membuat target.", true)
+    } finally {
+      setIsSubmittingGoal(false)
     }
-
-    const refreshed = await goalService.getAll()
-    setGoals(refreshed)
-
-    showToastNotification(`Target impian "${newTitle}" berhasil dibuat!`)
-
-    setNewTitle("")
-    setNewTargetAmount("")
-    setNewInitialDeposit("")
-    setIsSubmittingGoal(false)
-    setIsAddGoalOpen(false)
   }
 
   // Handle Deposit to Goal
@@ -182,17 +188,22 @@ export default function GoalsPage() {
     if (!targetGoal) return
 
     setIsSubmittingDeposit(true)
-    await goalService.deposit(selectedGoalId, amt, depositAccount)
-    const refreshed = await goalService.getAll()
-    setGoals(refreshed)
+    try {
+      await goalService.deposit(selectedGoalId, amt, depositAccount)
+      const refreshed = await goalService.getAll()
+      setGoals(refreshed)
 
-    showToastNotification(
-      `Berhasil setor ${fmt(amt)} ke "${targetGoal.title}"!`
-    )
+      showToastNotification(
+        `Berhasil setor ${fmt(amt)} ke "${targetGoal.title}"!`
+      )
 
-    setDepositAmount("")
-    setIsSubmittingDeposit(false)
-    setIsDepositOpen(false)
+      setDepositAmount("")
+      setIsDepositOpen(false)
+    } catch (err) {
+      showToastNotification(err instanceof Error ? err.message : "Gagal mencatat setoran.", true)
+    } finally {
+      setIsSubmittingDeposit(false)
+    }
   }
 
   // ---- Edit / Delete Target ----
@@ -219,24 +230,34 @@ export default function GoalsPage() {
     if (isNaN(targetNum) || targetNum <= 0) return
 
     setIsEditingGoal(true)
-    await goalService.update(editGoal.id, {
-      title: editTitle,
-      category: editCategory,
-      targetAmount: targetNum,
-      deadline: editDeadline || "Des 2026",
-    })
-    setGoals(await goalService.getAll())
-    setIsEditingGoal(false)
-    setEditGoal(null)
-    showToastNotification(`Target "${editTitle}" berhasil diperbarui.`)
+    try {
+      await goalService.update(editGoal.id, {
+        title: editTitle,
+        category: editCategory,
+        targetAmount: targetNum,
+        deadline: editDeadline || "Des 2026",
+      })
+      setGoals(await goalService.getAll())
+      setEditGoal(null)
+      showToastNotification(`Target "${editTitle}" berhasil diperbarui.`)
+    } catch (err) {
+      showToastNotification(err instanceof Error ? err.message : "Gagal memperbarui target.", true)
+    } finally {
+      setIsEditingGoal(false)
+    }
   }
 
   const handleDeleteGoal = async (g: GoalRecord) => {
     setDeletingGoalId(g.id)
-    await goalService.remove(g.id)
-    setGoals(await goalService.getAll())
-    setDeletingGoalId(null)
-    showToastNotification(`Target "${g.title}" dihapus.`)
+    try {
+      await goalService.remove(g.id)
+      setGoals(await goalService.getAll())
+      showToastNotification(`Target "${g.title}" dihapus.`)
+    } catch (err) {
+      showToastNotification(err instanceof Error ? err.message : "Gagal menghapus target.", true)
+    } finally {
+      setDeletingGoalId(null)
+    }
   }
 
   // Dynamic Calculations from Database
@@ -285,9 +306,19 @@ export default function GoalsPage() {
       <div className="flex flex-1 flex-col gap-6 p-4 md:p-6 bg-background">
         {/* Toast Notification Banner */}
         {notification && (
-          <div className="flex items-center gap-2.5 rounded-xl border border-border bg-card px-3.5 py-3 text-xs text-foreground shadow-sm animate-in fade-in slide-in-from-top-2">
-            <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-            <span>{notification}</span>
+          <div
+            className={`flex items-center gap-2.5 rounded-xl border px-3.5 py-3 text-xs shadow-sm animate-in fade-in slide-in-from-top-2 ${
+              notification.error
+                ? "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400"
+                : "border-border bg-card text-foreground"
+            }`}
+          >
+            {notification.error ? (
+              <AlertTriangle className="size-4 shrink-0" />
+            ) : (
+              <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+            )}
+            <span>{notification.msg}</span>
           </div>
         )}
 

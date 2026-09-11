@@ -435,24 +435,96 @@ ulang terhadap kode + live DB:
   - ⚠️ Migrasi diterapkan ke DB **sebelum** kode `joinRoom()` di-deploy —
     ada jendela singkat di mana produksi lama gagal join-kamar. Kode langsung
     di-deploy menyusul di commit yang sama sesi ini untuk menutup jendela itu.
-- **#6 (nomor kartu plaintext) — diperbaiki ringan.** `writeCardMeta()`
-  sekarang memaskir nomor kartu (>=12 digit berurutan → `**** **** **** 1234`)
-  sebelum disimpan ke sidecar lokal. Field ini tetap murni dekorasi visual
-  (tak ada di kolom Supabase manapun), tapi user yang iseng ketik nomor kartu
-  asli tidak lagi tersimpan utuh di localStorage.
+- **#6 (nomor kartu plaintext) — diperbaiki.** `maskCardNumber()` memaskir
+  nomor kartu (>=12 digit berurutan → `**** **** **** 1234`) sebelum disimpan
+  — sekarang ke kolom Supabase `accounts.card_number` (lihat Ronde 15), bukan
+  cuma sidecar lokal.
 - **#7 (ID `Date.now().slice(-4)` rawan tabrakan) — diperbaiki.** Helper
   `localId(prefix)` pakai `crypto.randomUUID()` (fallback ke random string
   kalau `crypto` tak tersedia), dipakai di 8 titik (`ACC/TX/G/SCH/ROOM/STX/REQ`).
   ID ini cuma placeholder sebelum id asli dari Supabase datang (mode
   Supabase) atau id permanen di mode lokal — bukan collision-prone lagi.
-- **#5 (pola fallback localStorage vs Supabase tersebar) — TIDAK diubah.**
-  Ini pola arsitektur yang disengaja (Supabase = source of truth, localStorage
-  = cache/fallback), bukan bug tunggal yang bisa ditambal — perlu keputusan
-  desain (mis. tampilkan error eksplisit tiap gagal insert) di luar scope
-  "perbaiki bug".
-- **#10 (tidak ada automated test) — TIDAK dikerjakan.** Prioritas rendah
-  (sesuai `BUGFIX.md` sendiri); menambah test runner (vitest/jest) + config
-  adalah pekerjaan terpisah, bukan "perbaikan bug" satu baris.
+
+typecheck + lint + `next build` lolos.
+
+## Ronde 15 (2026-09-11) — #5 "semua di Supabase" + #10 automated test
+
+Ronde 14 sempat menandai #5 & #10 "tidak dikerjakan" — user minta lanjutkan
+keduanya secara eksplisit.
+
+**#5 — localStorage bukan lagi source of truth, hanya cache/legacy-fallback.**
+
+1. **Migrasi `move_local_sidecars_to_real_columns`** (diterapkan) — 3 sidecar
+   localStorage (per-device, tak sinkron antar device) pindah ke kolom
+   Supabase asli:
+   - `accounts.card_number/card_holder/expiration` (dulu sidecar `CARD_META`)
+   - `scheduled_payments.account_id` (FK) `+ notes` (dulu sidecar `SCHEDULED_META`)
+   - `room_transactions.payer_account_id` (FK) (dulu sidecar `SPLIT_META`)
+   - `readCardMeta()`/`readSplitMeta()`/`readScheduledMeta()` tetap ada **hanya**
+     untuk backfill sekali dari cache device lama (dibaca sekali di `getAll()`,
+     ditulis balik ke kolom Supabase secara best-effort, lalu jadi basi).
+     `writeCardMeta()`/`writeScheduledMeta()` sudah **dihapus total** — tidak ada
+     lagi jalur tulis ke sidecar sebagai sumber kebenaran. `writePayerAccount()`
+     (baru) tulis ke `payer_account_id`, fallback sidecar cuma kalau update-nya
+     sendiri gagal.
+2. **Semua method tulis kritis sekarang MELEMPAR error kalau Supabase
+   dikonfigurasi tapi request gagal** — tidak lagi diam-diam membuat record
+   lokal palsu yang terlihat "berhasil" (akar masalah #5). Dibatasi ke jalur
+   yang datanya benar-benar penting (uang / data shared, bukan setiap fungsi):
+   `accountService` (add/update/remove), `transactionService` (add/update/
+   remove), `goalService` (add/update/remove/**deposit**), `scheduledService`
+   (add/update/remove/**pay**), `kamarService.createRoom()`,
+   `kamarService.addRequirement()`. Fallback localStorage MURNI ("mode lokal")
+   sekarang HANYA berlaku kalau Supabase sama sekali tidak dikonfigurasi (dev
+   tanpa `.env`) — dicek eksplisit lewat `if (isSupabaseConfigured && supabase)
+   {...} else {/* mode lokal */}`, bukan lagi "coba Supabase, apa pun hasilnya
+   lanjut ke local" seperti sebelumnya.
+   - Auto-log yang sifatnya pelengkap (bukan catatan utama) — auto-catat ke
+     `transactions` dari `goalService.deposit`/`scheduledService.pay`/
+     `reconcileRoomLedger` — dibungkus try/catch di `lib/db.ts` sendiri
+     (log + lanjut), supaya satu auto-log gagal tidak merusak fitur lain
+     (reconcile jalan tiap buka halaman kamar) atau menggagalkan aksi utama
+     yang sudah tersimpan (mis. status tagihan sudah "paid").
+   - `kamarService.payRequirement()` **sengaja dibiarkan melempar** (bukan
+     dibungkus) — auto-log ke `transactions` di situ bagian integral, bukan
+     pelengkap (dipakai `personal_transaction_id`).
+3. **6 halaman diupdate**: `finance`, `transaksi`, `goals`, `scheduled`,
+   `kamar/baru`, `kamar/kos/kebutuhan` — tiap handler yang manggil method di
+   atas dibungkus `try/catch`, notification jadi `{msg, error?}` dengan toast
+   merah (`AlertTriangle`) untuk error vs toast netral (`CheckCircle2`) untuk
+   sukses (sebelumnya cuma `string`, semua ditampilkan seolah sukses).
+4. **Bug tambahan yang ketemu & ikut diperbaiki** saat mengerjakan #5 (pola
+   sama, "gagal diam-diam tapi state lokal ikut berubah"):
+   - `transactionService.update()`/`remove()`: dulu saldo akun tetap
+     disesuaikan walau update/delete transaksi di Supabase gagal (silent) —
+     sekarang saldo cuma disesuaikan SETELAH Supabase sukses.
+   - `goalService.deposit()`: dulu `goals.update()`/`saving_logs.insert()`
+     gagal → tetap ditulis ke cache lokal seolah setoran berhasil.
+   - `scheduledService.pay()`: dulu update status "paid" gagal → tetap
+     ditandai lunas di cache lokal.
+   - `kamarService.createRoom()`: dulu insert gagal → mengembalikan kamar
+     lokal palsu yang tak pernah ada di server (anggota lain tak akan pernah
+     melihatnya) tapi UI bilang "berhasil dibuat".
+   - `kamarService.addRequirement()`: pola sama, untuk fitur **shared**
+     (kebutuhan bulanan) — dampaknya lebih terasa karena anggota lain memang
+     seharusnya melihat baris ini.
+
+**#10 — automated test (vitest).**
+
+- `vitest@3.2.7` (bukan v5 — konflik peer dependency; temuan audit yang
+  tersisa cuma path-traversal di mock-loader vitest, relevan untuk test pihak
+  ketiga yang tak tepercaya di CI — tidak relevan di sini, tak masuk bundle
+  produksi). `npm run test` / `npm run test:watch`.
+- `lib/db.test.ts` (18 test) — `resolvePersonalAccount`, `isSystemTransaction`/
+  `stripLedgerRef` (termasuk penanda model lama), `maskCardNumber`, `localId`
+  (termasuk cek anti-tabrakan), `todayLocalISO`/`toISODate`/`formatIdDate`.
+- `lib/scan-struk.test.ts` (9 test) — `computeOwed` (skenario SAMA dengan yang
+  diverifikasi lewat RPC `create_room_transaction_with_items`: Lauk 60rb/2
+  orang + Beras 30rb/1 orang, total 100rb → cuklis 65rb, nopal 35rb),
+  `round2`, `resultToRows`, `totalFromResult`.
+- Method yang manggil Supabase (I/O) sengaja **tidak** di-mock/di-test unit —
+  effort mocking `supabase-js` di luar scope sesi ini; method itu diverifikasi
+  manual + lewat DO-block rollback test di database.
 
 typecheck + lint + `next build` lolos.
 

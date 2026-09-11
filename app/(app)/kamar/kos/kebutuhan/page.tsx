@@ -70,6 +70,7 @@ import {
   Receipt,
   Plus,
   CheckCircle2,
+  AlertTriangle,
   ArrowRight,
   Search,
   LayoutGrid,
@@ -94,9 +95,9 @@ interface KosRoutineRequirement {
 export default function KebutuhanBulananKosPage() {
   const { fmt, formatInput, formatValue, parseInput, symbol, zero } = useMoney()
   // Notification Toast
-  const [notification, setNotification] = useState<string | null>(null)
-  const showNotification = (msg: string) => {
-    setNotification(msg)
+  const [notification, setNotification] = useState<{ msg: string; error?: boolean } | null>(null)
+  const showNotification = (msg: string, error = false) => {
+    setNotification({ msg, error })
     setTimeout(() => setNotification(null), 4000)
   }
 
@@ -303,26 +304,31 @@ export default function KebutuhanBulananKosPage() {
 
     setIsSubmitting(true)
 
-    // Simpan lewat service (insert ke Supabase room_requirements + cache lokal ter-scope).
-    await kamarService.addRequirement({
-      title: newTitle,
-      category: newCategory,
-      totalPrice: total,
-      splitPeopleCount: count,
-      dueDate: newDueDate || new Date().toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }),
-      responsiblePerson: newResponsible || "Ketua Kos",
-    })
+    try {
+      // Simpan lewat service (insert ke Supabase room_requirements + cache lokal ter-scope).
+      await kamarService.addRequirement({
+        title: newTitle,
+        category: newCategory,
+        totalPrice: total,
+        splitPeopleCount: count,
+        dueDate: newDueDate || new Date().toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }),
+        responsiblePerson: newResponsible || "Ketua Kos",
+      })
 
-    await reloadRequirements()
-    showNotification(
-      `Kebutuhan bulanan "${newTitle}" (${fmt(total)}) berhasil disimpan!`,
-    )
+      await reloadRequirements()
+      showNotification(
+        `Kebutuhan bulanan "${newTitle}" (${fmt(total)}) berhasil disimpan!`,
+      )
 
-    setNewTitle("")
-    setNewTotalPrice("")
-    setNewDueDate("")
-    setIsSubmitting(false)
-    setIsAddOpen(false)
+      setNewTitle("")
+      setNewTotalPrice("")
+      setNewDueDate("")
+      setIsAddOpen(false)
+    } catch (err) {
+      showNotification(err instanceof Error ? err.message : "Gagal menambah kebutuhan.", true)
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   // Handle Pay My Share & Auto-Deduct to Personal Transaction Log
@@ -331,13 +337,17 @@ export default function KebutuhanBulananKosPage() {
     if (!item || item.isPaidByMe) return
 
     setPayingId(id)
-    await kamarService.payRequirement(id)
-    await reloadRequirements()
-
-    showNotification(
-      `Setoran ${fmt(item.perPersonPrice)} untuk "${item.title}" berhasil dibayar & dicatat di database!`
-    )
-    setPayingId(null)
+    try {
+      await kamarService.payRequirement(id)
+      await reloadRequirements()
+      showNotification(
+        `Setoran ${fmt(item.perPersonPrice)} untuk "${item.title}" berhasil dibayar & dicatat di database!`
+      )
+    } catch (err) {
+      showNotification(err instanceof Error ? err.message : "Gagal mencatat pembayaran. Coba lagi.", true)
+    } finally {
+      setPayingId(null)
+    }
   }
 
   // Totals
@@ -395,9 +405,19 @@ export default function KebutuhanBulananKosPage() {
       <div className="flex flex-1 flex-col gap-6 p-4 md:p-6 bg-background min-w-0 max-w-full">
         {/* Toast Notification Banner */}
         {notification && (
-          <div className="flex items-center gap-2.5 rounded-xl border border-border bg-card px-3.5 py-3 text-xs text-foreground shadow-sm animate-in fade-in slide-in-from-top-2">
-            <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-            <span>{notification}</span>
+          <div
+            className={`flex items-center gap-2.5 rounded-xl border px-3.5 py-3 text-xs shadow-sm animate-in fade-in slide-in-from-top-2 ${
+              notification.error
+                ? "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400"
+                : "border-border bg-card text-foreground"
+            }`}
+          >
+            {notification.error ? (
+              <AlertTriangle className="size-4 shrink-0" />
+            ) : (
+              <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+            )}
+            <span>{notification.msg}</span>
           </div>
         )}
 

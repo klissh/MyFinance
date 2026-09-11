@@ -79,6 +79,7 @@ import {
   Calendar as CalendarIcon,
   Clock,
   CheckCircle2,
+  AlertTriangle,
   ArrowRight,
   Pencil,
   Trash2,
@@ -121,7 +122,7 @@ export default function ScheduledPage() {
   const [newSelectedDate, setNewSelectedDate] = useState<Date>(new Date())
   const [newNotes, setNewNotes] = useState("")
 
-  const [notification, setNotification] = useState<string | null>(null)
+  const [notification, setNotification] = useState<{ msg: string; error?: boolean } | null>(null)
 
   // Segarkan daftar sumber dana saat dialog "Tambah Jadwal" dibuka.
   useEffect(() => {
@@ -133,8 +134,8 @@ export default function ScheduledPage() {
     })
   }, [isAddDialogOpen])
 
-  const showNotification = (msg: string) => {
-    setNotification(msg)
+  const showNotification = (msg: string, error = false) => {
+    setNotification({ msg, error })
     setTimeout(() => setNotification(null), 4000)
   }
 
@@ -160,35 +161,45 @@ export default function ScheduledPage() {
 
     if (parsedAmount > 0) {
       setIsSubmitting(true)
-      const newBill = await scheduledService.add({
-        title: newTitle,
-        amount: parsedAmount,
-        date: isoDate,
-        formattedDate: formatted,
-        category: newCategory,
-        account: newAccount,
-        status: "pending",
-        notes: newNotes,
-      })
-      setScheduledBills([newBill, ...scheduledBills])
+      try {
+        const newBill = await scheduledService.add({
+          title: newTitle,
+          amount: parsedAmount,
+          date: isoDate,
+          formattedDate: formatted,
+          category: newCategory,
+          account: newAccount,
+          status: "pending",
+          notes: newNotes,
+        })
+        setScheduledBills([newBill, ...scheduledBills])
 
-      const newCalTx: CalendarTransaction = {
-        id: newBill.id,
-        title: newTitle,
-        category: newCategory,
-        type: "out",
-        amount: parsedAmount,
-        account: newAccount,
-        date: isoDate,
-        formattedDate: formatted,
-        notes: newNotes,
-        hour: 10,
-        timeLabel: "10:00 AM",
+        const newCalTx: CalendarTransaction = {
+          id: newBill.id,
+          title: newTitle,
+          category: newCategory,
+          type: "out",
+          amount: parsedAmount,
+          account: newAccount,
+          date: isoDate,
+          formattedDate: formatted,
+          notes: newNotes,
+          hour: 10,
+          timeLabel: "10:00 AM",
+        }
+
+        setCalendarTransactions([newCalTx, ...calendarTransactions])
+        showNotification(`Jadwal/Tagihan "${newTitle}" berhasil didaftarkan & otomatis tampil di kalender!`)
+        setNewTitle("")
+        setNewAmount("")
+        setNewNotes("")
+        setIsAddDialogOpen(false)
+      } catch (err) {
+        showNotification(err instanceof Error ? err.message : "Gagal mendaftarkan jadwal.", true)
+      } finally {
+        setIsSubmitting(false)
       }
-
-      setCalendarTransactions([newCalTx, ...calendarTransactions])
-      showNotification(`Jadwal/Tagihan "${newTitle}" berhasil didaftarkan & otomatis tampil di kalender!`)
-      setIsSubmitting(false)
+      return
     }
 
     setNewTitle("")
@@ -202,16 +213,19 @@ export default function ScheduledPage() {
     if (!bill) return
 
     setPayingId(id)
-    await scheduledService.pay(id)
-
-    setScheduledBills(
-      scheduledBills.map((b) => (b.id === id ? { ...b, status: "paid" } : b))
-    )
-
-    showNotification(
-      `Pembayaran "${bill.title}" sebesar ${fmt(bill.amount)} berhasil & otomatis dicatat ke log Transaksi!`
-    )
-    setPayingId(null)
+    try {
+      await scheduledService.pay(id)
+      setScheduledBills(
+        scheduledBills.map((b) => (b.id === id ? { ...b, status: "paid" } : b))
+      )
+      showNotification(
+        `Pembayaran "${bill.title}" sebesar ${fmt(bill.amount)} berhasil & otomatis dicatat ke log Transaksi!`
+      )
+    } catch (err) {
+      showNotification(err instanceof Error ? err.message : "Gagal mencatat pembayaran.", true)
+    } finally {
+      setPayingId(null)
+    }
   }
 
   // ---- Edit / Delete Jadwal ----
@@ -245,28 +259,38 @@ export default function ScheduledPage() {
 
     setIsEditing(true)
     const iso = `${editDate.getFullYear()}-${String(editDate.getMonth() + 1).padStart(2, "0")}-${String(editDate.getDate()).padStart(2, "0")}`
-    await scheduledService.update(editBill.id, {
-      title: editTitle,
-      amount: amt,
-      category: editCategory,
-      account: editAccount,
-      date: iso,
-      notes: editNotes,
-    })
-    await refreshBills()
-    setIsEditing(false)
-    setEditBill(null)
-    showNotification(`Jadwal "${editTitle}" berhasil diperbarui.`)
+    try {
+      await scheduledService.update(editBill.id, {
+        title: editTitle,
+        amount: amt,
+        category: editCategory,
+        account: editAccount,
+        date: iso,
+        notes: editNotes,
+      })
+      await refreshBills()
+      setEditBill(null)
+      showNotification(`Jadwal "${editTitle}" berhasil diperbarui.`)
+    } catch (err) {
+      showNotification(err instanceof Error ? err.message : "Gagal memperbarui jadwal.", true)
+    } finally {
+      setIsEditing(false)
+    }
   }
 
   const handleDeleteBill = async (b: ScheduledBillRecord) => {
     setDeletingId(b.id)
     setConfirmDelete(null)
-    await scheduledService.remove(b.id)
-    await refreshBills()
-    setCalendarTransactions((prev) => prev.filter((t) => t.id !== b.id))
-    setDeletingId(null)
-    showNotification(`Jadwal "${b.title}" dihapus.`)
+    try {
+      await scheduledService.remove(b.id)
+      await refreshBills()
+      setCalendarTransactions((prev) => prev.filter((t) => t.id !== b.id))
+      showNotification(`Jadwal "${b.title}" dihapus.`)
+    } catch (err) {
+      showNotification(err instanceof Error ? err.message : "Gagal menghapus jadwal.", true)
+    } finally {
+      setDeletingId(null)
+    }
   }
 
   // Aksi bayar + kelola, dipakai tabel desktop & kartu mobile.
@@ -488,9 +512,19 @@ export default function ScheduledPage() {
       <div className="flex flex-1 flex-col gap-6 p-4 md:p-6 bg-background">
         {/* Toast Notification Banner */}
         {notification && (
-          <div className="flex items-center gap-2.5 rounded-xl border border-border bg-card px-3.5 py-3 text-xs text-foreground shadow-sm animate-in fade-in slide-in-from-top-2">
-            <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-            <span>{notification}</span>
+          <div
+            className={`flex items-center gap-2.5 rounded-xl border px-3.5 py-3 text-xs shadow-sm animate-in fade-in slide-in-from-top-2 ${
+              notification.error
+                ? "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400"
+                : "border-border bg-card text-foreground"
+            }`}
+          >
+            {notification.error ? (
+              <AlertTriangle className="size-4 shrink-0" />
+            ) : (
+              <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+            )}
+            <span>{notification.msg}</span>
           </div>
         )}
 
