@@ -575,6 +575,42 @@ memuat kondisi buruk (blur/miring/gelap); struk asli hasil foto HP yang niat
 kemungkinan lebih baik. Rekomendasi: minta 2-3 foto struk asli dari user
 untuk tes definitif.
 
+## Ronde 17 (2026-09-12) — tes dengan foto struk ASLI (bukan dataset)
+
+User kirim 2 foto struk asli (Rosyam Mart & Lotus's, Malaysia — difoto
+pegang tangan, pencahayaan normal). Ini tes pertama yang benar-benar
+representatif dengan use-case nyata (bukan gambar riset CORD-v2).
+
+**Bagus:** teks EasyOCR terbaca jelas untuk foto yang fokus & terang — nama
+barang hampir semua kebaca benar. Angka subtotal per item **akurat**: 14/15
+baris (Rosyam Mart) dan 4/5 baris (Lotus's) persis sama dengan struk fisik.
+Sub Total/Total footer terdeteksi tepat (61.20 dan 15.25, keduanya exact
+match) — setelah perbaikan di bawah.
+
+**Masalah nyata #1 (diperbaiki): kode barang/barcode menghabiskan token.**
+Struk ritel/supermarket cetak kode barcode panjang (13-18 digit) di baris
+sendiri di bawah tiap nama barang — beda dari struk kafe (data training
+CORD-v2) yang tak punya ini. Word-piece tokenizer memecah tiap angka
+barcode jadi banyak token, jadi pada struk 15 item (158 kata OCR), **59
+kata di ujung (termasuk TOTAL) terpotong** oleh limit 512 token LayoutLMv3
+sebelum diperbaiki. **Fix:** filter kata >=8 digit murni (pola barcode,
+harga selalu punya titik/koma) sebelum dikirim ke model (tetap muncul di
+`raw_words` label "O" untuk transparansi). Turun jadi 23/141 kata terpotong
+pada struk yang sama, dan Sub Total (61.20) yang tadinya hilang sekarang
+terdeteksi tepat.
+
+**Masalah nyata #2 (belum diperbaiki, didokumentasikan):** kadang **satu
+item hilang total** dari hasil (bukan cuma nama berantakan) — kejadian di
+struk Lotus's ("JAGUNG MAN 5.49" tak muncul sama sekali, kemungkinan
+tergabung ke entity tetangga). Layar review/edit membantu untuk nama yang
+berantakan, tapi TIDAK membantu kalau baris hilang sama sekali — user tetap
+perlu sekilas cek jumlah item vs struk fisik, terutama untuk struk panjang.
+Header nama/alamat toko yang panjang juga makan token — belum difilter
+(lebih berisiko salah filter teks yang justru relevan).
+
+Kedua perbaikan (parsing nominal Ronde 16 + filter barcode Ronde 17) sudah
+di-redeploy & diverifikasi ulang ke endpoint live dengan curl langsung.
+
 ## Yang TIDAK perlu dikerjakan otomatis
 
 - Migrasi data dari Bizmo ke MSU — menunggu tindakan manusia (pemilik Bizmo invite member, atau ekspor file manual).
