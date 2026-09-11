@@ -404,6 +404,58 @@ env OK). **Belum diuji end-to-end dengan user login + foto struk asli.** Mode
   (`OCR_*` env di Modal secret) setelah lihat data nyata.
 - Gambar struk tidak disimpan (tak ada Supabase Storage) — hanya hasil parse.
 
+## Ronde 14 (2026-09-11) — perbaikan dari `BUGFIX.md`
+
+`BUGFIX.md` (code review manual) ternyata sebagian besar mendeskripsikan clone
+**lama**, dari sebelum Ronde 1-13. Sebelum eksekusi, tiap temuan diverifikasi
+ulang terhadap kode + live DB:
+
+- **#1 (auth bypass), #3 (split tak tersimpan), #4 (iuran tak sinkron),
+  #8 (middleware cek cookie doang), #9 (dokumentasi kosong) — SUDAH
+  diperbaiki di ronde sebelumnya**, tidak disentuh lagi (diverifikasi baca
+  ulang `authService`, `proxy.ts`, `README.md`, dan `payRequirement()`).
+- **#2 (RLS `USING(true)` di semua tabel `room_*`) — MASIH NYATA, 🔴
+  Kritis.** Dikonfirmasi lewat query `pg_policies` langsung ke live DB
+  sebelum diperbaiki. Migrasi `fix_room_rls_scope_to_members`:
+  - Helper `public.is_room_member(room_id, user_id)` SECURITY DEFINER
+    (hindari "infinite recursion detected in policy" — tabel `room_members`
+    tak boleh mereferensi dirinya sendiri langsung di `USING`).
+  - SELECT `rooms`/`room_members`/`room_transactions`/
+    `room_transaction_splits`/`room_requirements`/`room_requirement_payments`
+    dibatasi ke anggota kamar terkait (dulu bisa dibaca siapa pun yang login).
+    INSERT `room_requirements` juga dibatasi (dulu `WITH CHECK(true)`).
+  - RPC baru `find_room_by_invite_code(p_code)` (SECURITY DEFINER) — dipakai
+    `kamarService.joinRoom()` supaya tetap bisa cari kamar via kode undangan
+    SEBELUM jadi anggota (kalau tidak, join-kamar rusak total karena SELECT
+    `rooms` sekarang dibatasi anggota).
+  - **Diverifikasi via DO-block rollback** (2 kamar simulasi + role
+    `authenticated` sungguhan, bukan superuser): anggota Room A tidak bisa
+    lagi SELECT rooms/room_members/room_transactions Room B; lookup by kode
+    tetap jalan; akses kamar sendiri tidak terganggu.
+  - ⚠️ Migrasi diterapkan ke DB **sebelum** kode `joinRoom()` di-deploy —
+    ada jendela singkat di mana produksi lama gagal join-kamar. Kode langsung
+    di-deploy menyusul di commit yang sama sesi ini untuk menutup jendela itu.
+- **#6 (nomor kartu plaintext) — diperbaiki ringan.** `writeCardMeta()`
+  sekarang memaskir nomor kartu (>=12 digit berurutan → `**** **** **** 1234`)
+  sebelum disimpan ke sidecar lokal. Field ini tetap murni dekorasi visual
+  (tak ada di kolom Supabase manapun), tapi user yang iseng ketik nomor kartu
+  asli tidak lagi tersimpan utuh di localStorage.
+- **#7 (ID `Date.now().slice(-4)` rawan tabrakan) — diperbaiki.** Helper
+  `localId(prefix)` pakai `crypto.randomUUID()` (fallback ke random string
+  kalau `crypto` tak tersedia), dipakai di 8 titik (`ACC/TX/G/SCH/ROOM/STX/REQ`).
+  ID ini cuma placeholder sebelum id asli dari Supabase datang (mode
+  Supabase) atau id permanen di mode lokal — bukan collision-prone lagi.
+- **#5 (pola fallback localStorage vs Supabase tersebar) — TIDAK diubah.**
+  Ini pola arsitektur yang disengaja (Supabase = source of truth, localStorage
+  = cache/fallback), bukan bug tunggal yang bisa ditambal — perlu keputusan
+  desain (mis. tampilkan error eksplisit tiap gagal insert) di luar scope
+  "perbaiki bug".
+- **#10 (tidak ada automated test) — TIDAK dikerjakan.** Prioritas rendah
+  (sesuai `BUGFIX.md` sendiri); menambah test runner (vitest/jest) + config
+  adalah pekerjaan terpisah, bukan "perbaikan bug" satu baris.
+
+typecheck + lint + `next build` lolos.
+
 ## Yang TIDAK perlu dikerjakan otomatis
 
 - Migrasi data dari Bizmo ke MSU — menunggu tindakan manusia (pemilik Bizmo invite member, atau ekspor file manual).

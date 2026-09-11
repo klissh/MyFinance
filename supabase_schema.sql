@@ -486,5 +486,46 @@ WITH CHECK (EXISTS (SELECT 1 FROM public.room_transaction_items i
 --   - EXECUTE dicabut dari anon/public, di-grant ke authenticated.
 
 -- ====================================================================
+-- 18. FIX RLS: SELECT dibatasi ke anggota kamar (BUGFIX.md #2)
+--     Migrasi: fix_room_rls_scope_to_members — SUDAH diterapkan
+-- ====================================================================
+-- Sebelumnya SELECT pada rooms/room_members/room_transactions/
+-- room_transaction_splits/room_requirements/room_requirement_payments semua
+-- USING(true) — siapa pun yang login bisa membaca kamar/transaksi/tagihan
+-- MILIK KAMAR SIAPA PUN, bukan cuma kamarnya sendiri. `room_requirements`
+-- INSERT juga dulu WITH CHECK(true) (siapa pun bisa nambah "kebutuhan" ke
+-- kamar orang lain).
+--
+-- Helper SECURITY DEFINER (hindari "infinite recursion detected in policy
+-- for relation room_members" — tabel yang mereferensi dirinya sendiri di
+-- USING clause):
+CREATE OR REPLACE FUNCTION public.is_room_member(p_room_id uuid, p_user_id uuid)
+RETURNS boolean LANGUAGE sql SECURITY DEFINER STABLE SET search_path = ''
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.room_members
+    WHERE room_id = p_room_id AND user_id = p_user_id
+  );
+$$;
+REVOKE ALL ON FUNCTION public.is_room_member(uuid, uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.is_room_member(uuid, uuid) TO authenticated;
+
+-- rooms / room_members / room_transactions / room_transaction_splits /
+-- room_requirements (SELECT + INSERT) / room_requirement_payments: semua
+-- policy USING(true) diganti jadi `public.is_room_member(room_id, auth.uid())`
+-- (atau `created_by = auth.uid()` / `user_id = auth.uid()` untuk baris milik
+-- sendiri). Body lengkap ada di migrasi `fix_room_rls_scope_to_members`.
+--
+-- RPC `find_room_by_invite_code(p_code text)` (SECURITY DEFINER) — dipakai
+-- `kamarService.joinRoom()` untuk mencari kamar via kode undangan SEBELUM jadi
+-- anggota (tanpa ini, join-kamar rusak total karena SELECT `rooms` sekarang
+-- dibatasi ke anggota). Hanya mengembalikan kolom yang perlu; tidak bisa
+-- dipakai enumerasi kamar (harus tahu kode persis).
+--
+-- Diverifikasi via DO-block rollback: anggota Room A TIDAK BISA SELECT
+-- rooms/room_members/room_transactions milik Room B; lookup by invite code
+-- tetap jalan; akses ke kamar sendiri tidak terganggu.
+
+-- ====================================================================
 -- END OF SCHEMA
 -- ====================================================================

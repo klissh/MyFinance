@@ -262,6 +262,33 @@ function todayLocalISO(d: Date = new Date()): string {
   return `${y}-${m}-${day}`
 }
 
+// ID sementara sisi klien (dipakai sebelum id asli dari Supabase datang, atau
+// sebagai id permanen di mode lokal tanpa Supabase). `crypto.randomUUID()`
+// dipakai supaya tak rawan tabrakan seperti 4 digit terakhir `Date.now()`
+// (dua device bisa membuat record di milidetik yang berdekatan).
+function localId(prefix: string): string {
+  try {
+    if (typeof crypto !== "undefined" && crypto.randomUUID) {
+      return `${prefix}-${crypto.randomUUID()}`
+    }
+  } catch {
+    // ignore, pakai fallback di bawah
+  }
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+// Nomor kartu di sini murni dekorasi visual (lihat CardMeta) — tidak pernah
+// dibutuhkan utuh oleh logika apa pun. Kalau user mengetik nomor kartu ASLI
+// (>=12 digit berurutan) alih-alih pola contoh ("**** **** 8829"), maskir
+// semua kecuali 4 digit terakhir sebelum disimpan ke localStorage.
+function maskCardNumber(input: string): string {
+  const digits = input.replace(/\D/g, "")
+  if (digits.length >= 12) {
+    return `**** **** **** ${digits.slice(-4)}`
+  }
+  return input
+}
+
 function formatIdDate(input: string | Date): string {
   const d = typeof input === "string" ? new Date(input) : input
   if (isNaN(d.getTime())) return "-"
@@ -287,7 +314,7 @@ function writeCardMeta(accountId: string, meta: CardMeta): void {
   if (typeof window === "undefined") return
   try {
     const all = readCardMeta()
-    all[accountId] = meta
+    all[accountId] = { ...meta, cardNumber: maskCardNumber(meta.cardNumber) }
     localStorage.setItem(BASE_STORAGE_KEYS.CARD_META, JSON.stringify(all))
   } catch {
     // ignore
@@ -557,7 +584,7 @@ export const accountService = {
     const currentUser = authService.getCurrentUser()
     let newRecord: FinancialAccountRecord = {
       ...item,
-      id: `ACC-${Date.now().toString().slice(-4)}`,
+      id: localId("ACC"),
     }
 
     if (isSupabaseConfigured && supabase && currentUser?.id && currentUser.id.includes("-")) {
@@ -902,7 +929,7 @@ export const transactionService = {
     const currentUser = authService.getCurrentUser()
     let newRecord: TransactionRecord = {
       ...item,
-      id: `TX-${Date.now().toString().slice(-4)}`,
+      id: localId("TX"),
     }
 
     if (isSupabaseConfigured && supabase && currentUser?.id && currentUser.id.includes("-")) {
@@ -1188,7 +1215,7 @@ export const goalService = {
     const currentUser = authService.getCurrentUser()
     let newGoal: GoalRecord = {
       ...item,
-      id: `G-${Date.now().toString().slice(-4)}`,
+      id: localId("G"),
       currentAmount: 0,
       status: "active",
     }
@@ -1406,7 +1433,7 @@ export const scheduledService = {
     const currentUser = authService.getCurrentUser()
     let newBill: ScheduledBillRecord = {
       ...item,
-      id: `SCH-${Date.now().toString().slice(-4)}`,
+      id: localId("SCH"),
     }
 
     if (isSupabaseConfigured && supabase && currentUser?.id && currentUser.id.includes('-')) {
@@ -1653,7 +1680,7 @@ export const kamarService = {
     const code = `KOS-${Math.floor(100 + Math.random() * 900)}`
 
     let newRoom: KamarRoomRecord = {
-      id: `ROOM-${Date.now().toString().slice(-4)}`,
+      id: localId("ROOM"),
       name,
       code,
       location,
@@ -1728,15 +1755,18 @@ export const kamarService = {
         return { room: null, error: "Sesi tidak valid. Silakan login ulang." }
       }
       try {
-        const { data: roomData, error: roomErr } = await supabase
-          .from("rooms")
-          .select("*")
-          .eq("invite_code", cleanCode)
-          .maybeSingle()
+        // Lewat RPC (bukan SELECT langsung ke `rooms`): sejak RLS dibatasi ke
+        // anggota kamar (lihat migrasi fix_room_rls_scope_to_members), user yang
+        // BELUM jadi anggota tidak bisa SELECT baris kamar tujuan secara langsung.
+        const { data: roomRows, error: roomErr } = await supabase.rpc(
+          "find_room_by_invite_code",
+          { p_code: cleanCode },
+        )
 
         if (roomErr) {
           return { room: null, error: "Gagal mencari kamar. Coba lagi." }
         }
+        const roomData = roomRows?.[0]
         if (!roomData) {
           return { room: null, error: `Kode undangan "${cleanCode}" tidak ditemukan.` }
         }
@@ -1782,7 +1812,7 @@ export const kamarService = {
 
     // Mode lokal (Supabase tidak dikonfigurasi).
     const localRoom: KamarRoomRecord = {
-      id: `ROOM-${Date.now().toString().slice(-4)}`,
+      id: localId("ROOM"),
       name: `Kamar Kos (${cleanCode})`,
       code: cleanCode,
       monthlyFee: 200000,
@@ -2038,7 +2068,7 @@ export const kamarService = {
     else if (item.splitUserIds.includes(myId || "")) myShare = perPerson
 
     let newTx: SharedTransactionRecord = {
-      id: `STX-${Date.now().toString().slice(-4)}`,
+      id: localId("STX"),
       title: item.title,
       category: item.category,
       totalAmount: item.totalAmount,
@@ -2711,7 +2741,7 @@ export const kamarService = {
       Math.ceil(item.totalPrice / Math.max(1, item.splitPeopleCount))
 
     let newReq: RequirementRecord = {
-      id: `REQ-${Date.now().toString().slice(-4)}`,
+      id: localId("REQ"),
       title: item.title,
       category: item.category,
       totalPrice: item.totalPrice,
