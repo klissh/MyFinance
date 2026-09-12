@@ -692,6 +692,87 @@ diekspor) di kedua fungsi. Tambah 2 test regresi di
 `lib/scan-struk.test.ts` (subtotal item & total RM dengan sen tidak lagi
 dibulatkan ke bulat). Semua 29 test (`vitest run`) + `tsc --noEmit` lolos.
 
+## Ronde 20 (2026-09-12) — hasil scan masih "ngaco" di struk retail nyata
+
+User uji ulang struk Lotus's yang SAMA (Ronde 17/18) dan tunjukkan
+screenshot: masih 16 "item" (5 asli + 11 sampah header/footer: "BHD",
+"{MAL AYSIA) SDN", "Lotuss STORES...", "No (Reg" dengan subtotal salah
+tempel, dll). Diminta analisa mendalam + perbaikan langsung (bukan cuma
+laporan). Root cause ditelusuri dari `raw_words` mentah (bukan tebakan),
+ketemu 3 lapis masalah SEKALIGUS, semuanya diperbaiki di
+`inference/modal_app.py`:
+
+1. **Urutan kata EasyOCR rusak.** Sort lama cuma `(top_y, left_x)` per
+   kata — untuk foto dipegang tangan yang melengkung/miring, dua kata SATU
+   baris visual bisa punya top-y beda jauh. Bukti: harga "2.39" muncul
+   SEBELUM nama barangnya sendiri di `raw_words`; header toko 2-baris
+   teracak total. **Fix:** `_reading_order()` — pengelompokan baris
+   berbasis tumpang-tindih rentang-y (bukan sort satu-kunci), baru sort
+   kiri-kanan DALAM tiap baris. Diverifikasi lewat `_ro_check()` (assert
+   saat import) + test sintetis baris miring.
+2. **EasyOCR gabung barcode+nama jadi 1 token.** `"09555663102185
+   FRESHEST"` itu SATU token, jadi filter barcode lama (`_is_barcode_like`,
+   cuma cek kata MURNI angka) tak pernah kena — nama barang aslinya
+   ("FRESHEST") ikut terkubur di dalam field yang salah. **Fix:**
+   `_strip_barcode_prefix()` — potong awalan >=8 digit dari token gabungan,
+   sisakan teks aslinya sebelum dikirim ke model.
+3. **Tidak ada batas akhir wilayah item.** Teks footer (poin member,
+   "sign up for savings", dll) di luar distribusi training model, jadi
+   labelnya asal tebak dan ikut dianggap item. **Fix:** `_reconstruct()`
+   berhenti mengumpulkan item begitu field `sub_total.subtotal_price` /
+   `total.total_price` PERTAMA muncul (2 field ini saja — field lain kayak
+   `total.menuqty_cnt` TERBUKTI dari struk Rosyam Mart bisa tersasar ke
+   TENGAH daftar item, jadi tidak dipakai sebagai pemicu berhenti supaya
+   item asli sesudahnya tak ikut terbuang).
+4. Item hasil rekonstruksi yang **sama sekali tanpa nilai uang** (nama
+   doang, mis. pecahan header yang salah kena label `menu.nm`) dibuang —
+   tak bisa dibagi, cuma sampah.
+5. **Tambahan (ditemukan saat verifikasi ulang):** dalam proses
+   `_reconstruct()` juga ditambah **pemaksaan batas entity baru saat lompat
+   baris** (pakai box y-range, lihat `_same_line()`) — model kadang kasih
+   label lanjutan (I-) lintas baris yang sama sekali tak berhubungan,
+   sebelumnya bikin beberapa nama tergabung jadi satu blob raksasa.
+6. **Bug regresi yang ketahuan & diperbaiki sebelum deploy final:** field
+   ringkasan (mis. "Sub Total") kadang kepecah jadi >1 entity kalau kata
+   lain nyelip di tengah (mis. "Sub Total" → "Rounding" → "61 20" → "61,20"
+   — 3 percobaan OCR untuk angka yang SAMA). `setdefault` polos mengunci ke
+   entity PERTAMA (sering tanpa angka atau angka terpotong salah).
+   **Fix:** `_summary_rank()` — utamakan entity dengan akhiran desimal
+   2-digit jelas (`_has_decimal_suffix()`) di atas angka tebakan kasar, di
+   atas teks tanpa angka. Efek samping: `jml_item` kadang menangkap fragmen
+   kode barang jadi angka besar tak masuk akal (mis. "2544 item") —
+   diredam dengan batas kewajaran (`1 <= jml_item <= 200`) di
+   `_item_count_warning()`, bukan dengan melemahkan fix intinya.
+
+**Hasil verifikasi live (curl langsung, container lama di-stop tiap
+redeploy, sesuai disiplin Ronde 16):**
+
+| | Sebelum Ronde 20 | Sesudah |
+|---|---|---|
+| Lotus's — jumlah item | 16 (11 sampah) | **5 (persis cocok `jml_item` struk)** |
+| Lotus's — semua harga real | 5/5 benar tapi salah tempel ke nama sampah | **5/5 benar**, nama 2/5 masih fragmen ("B" bukan "FRESHEST B") |
+| Lotus's — warning | "5 vs 16, cek manual" | tidak ada (cocok) |
+| Rosyam Mart — jumlah item | 34 (banyak sampah) | 22 (masih ada sampah di 1 zona bertumpuk, tapi jauh berkurang) |
+| Rosyam Mart — Sub Total | 61,20 (benar) | tetap 61,20 (sempat regresi ke 20 di tengah proses, ketahuan & diperbaiki sebelum deploy final) |
+| Rosyam Mart — 3 item zona akhir (RUSSET POTATO dkk) | subtotal ada (1 salah, sudah diketahui) | subtotal hilang (regresi baru, model tak pernah beri label subtotal di zona ini setelah urutan kata berubah) |
+
+10 test pytest baru ditambah ke `inference/test_reconstruct.py` (total 17,
+semua lolos) meng-cover tiap fix di atas + 2 skenario regresi yang
+sempat kejadian selama proses ini sendiri (bukti kenapa disiplin "test
+tiap fix + verifikasi live tiap redeploy" penting — 2 regresi di atas
+KETAHUAN justru karena proses ini, bukan lolos ke production).
+
+**Kesimpulan jujur:** Lotus's (struk pendek, 5 item) sekarang nyaris
+sempurna. Rosyam Mart (15 item asli + banyak metadata di sekitarnya, satu
+zona harga per-kg format "harga*berat" yang rumit) masih ada 3 item yang
+kehilangan angka subtotal-nya — ini **bukan regresi yang saya biarkan**,
+tapi keterbatasan model yang genuinely tidak memberi label `menu.price`
+untuk zona itu (baru ketahuan setelah urutan token berubah oleh fix #1).
+Perbaikan lebih lanjut untuk kasus ini butuh pengelompokan spasial penuh
+(pakai koordinat box untuk SEMUA pengelompokan item, bukan cuma
+pemaksaan batas-baris yang sudah ditambahkan) — perubahan arsitektur lebih
+besar, didiskusikan terpisah kalau user mau lanjutkan.
+
 ## Yang TIDAK perlu dikerjakan otomatis
 
 - Migrasi data dari Bizmo ke MSU — menunggu tindakan manusia (pemilik Bizmo invite member, atau ekspor file manual).

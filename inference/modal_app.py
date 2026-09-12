@@ -155,6 +155,39 @@ assert _amount_value("12.50") == 12.5, "regresi: parsing desimal RM"
 assert _amount_value("60,000") == 60000, "regresi: parsing ribuan"
 
 
+def _has_decimal_suffix(text):
+    """True kalau `text` (setelah pra-proses yang SAMA seperti _amount_value)
+    punya akhiran desimal 2-digit yang jelas (mis. "61,20") -- sinyal jauh
+    lebih bisa dipercaya sebagai nominal uang valid dibanding angka polos
+    hasil tebakan kasar (mis. "20" saja dari "61 20" yang kepisah spasi
+    tanpa tanda pemisah sama sekali -- ditemukan di struk Rosyam Mart nyata,
+    field yang sama kepecah jadi beberapa entity dengan kualitas OCR beda)."""
+    if not text:
+        return False
+    t = re.sub(r"(?<=\d)\s*([.,])\s*(?=\d)", r"\1", text)
+    t = re.sub(r"(?<=\d)\s+(?=[0oO]{2,3}(?:\b|$))", "", t)
+    candidates = [m.group(0) for m in re.finditer(r"[\d.,oO]+", t) if re.search(r"\d", m.group(0))]
+    if not candidates:
+        return False
+    s = re.sub(r"[oO]", "0", candidates[-1])
+    return re.search(r"[.,](\d{2})$", s) is not None
+
+
+def _summary_rank(text):
+    # Dipakai saat SATU field ringkasan kepecah jadi beberapa entity (lihat
+    # _has_decimal_suffix) -- entity dengan akhiran desimal jelas menang di
+    # atas entity yang cuma kebetulan mengandung angka (fallback kasar),
+    # yang menang di atas entity tanpa angka sama sekali.
+    if _has_decimal_suffix(text):
+        return 2
+    if _amount_value(text) is not None:
+        return 1
+    return 0
+
+
+assert _summary_rank("61,20") > _summary_rank("61 20") > _summary_rank("Sub Total")
+
+
 def _is_barcode_like(word: str) -> bool:
     """True untuk kode barang/barcode (>=8 digit murni, tanpa titik/koma) —
     ditemukan dari struk retail asli, kata seperti ini menghabiskan jatah
@@ -166,6 +199,92 @@ def _is_barcode_like(word: str) -> bool:
 assert _is_barcode_like("9555452100071") is True
 assert _is_barcode_like("2.30") is False
 assert _is_barcode_like("15") is False
+
+
+_BARCODE_PREFIX_RE = re.compile(r"^\s*\d{8,}\s+(?=\S)")
+
+
+def _strip_barcode_prefix(word: str) -> str:
+    """EasyOCR kadang menggabung SATU baris (barcode + nama barang) jadi
+    SATU token teks, mis. "09555663102185 FRESHEST" (struk retail Lotus's)
+    -- _is_barcode_like() (yang mengecek kata MURNI angka) tak pernah kena
+    di sini karena hasil gabungannya bukan lagi murni angka, jadi barcode-nya
+    ikut terkirim ke model DAN MENUTUPI nama barang aslinya (root cause item
+    jadi "No (Reg" / "B" alih-alih "FRESHEST B" / "JAGUNG MAN"). Potong
+    awalan angka >=8 digit itu, sisakan teks aslinya."""
+    m = _BARCODE_PREFIX_RE.match(word)
+    return word[m.end():] if m else word
+
+
+assert _strip_barcode_prefix("09555663102185 FRESHEST") == "FRESHEST"
+assert _strip_barcode_prefix("09555349113795   JAGUNG   MAN") == "JAGUNG   MAN"
+assert _strip_barcode_prefix("FRESHEST B") == "FRESHEST B"
+assert _strip_barcode_prefix("2.30") == "2.30"
+assert _strip_barcode_prefix("9555452100071") == "9555452100071"  # murni angka -> tetap (ranah _is_barcode_like)
+
+
+def _reading_order(ocr_results):
+    """Urutkan hasil EasyOCR ke urutan baca (baris atas->bawah, lalu kiri->
+    kanan DALAM satu baris) lewat pengelompokan baris berbasis tumpang-tindih
+    rentang-y, BUKAN sort satu-kunci (top-y kata, lalu x) seperti sebelumnya.
+
+    Kenapa perlu: foto struk asli dipegang tangan sering sedikit miring/
+    melengkung -- dua kata yang SATU baris visual bisa punya top-y piksel
+    berbeda cukup jauh (ujung kanan baris bisa lebih tinggi/rendah dari ujung
+    kiri tergantung arah kemiringan kertas). Sort satu-kunci pernah terbukti
+    (struk Lotus's) menukar urutan HARGA (kanan) dengan BARANG (kiri) yang
+    SATU baris yang sama, dan mengacak total header toko yang melipat 2
+    baris jadi urutan acak. LayoutLMv3 lalu salah mengelompokkan field
+    karena urutan token sudah rusak sebelum sampai ke model -- ini bukan
+    kesalahan model, tapi data urutan yang sudah cacat duluan.
+    """
+    entries = []
+    for pts, text, conf in ocr_results:
+        text = (text or "").strip()
+        if not text:
+            continue
+        ys = [p[1] for p in pts]
+        xs = [p[0] for p in pts]
+        entries.append({"pts": pts, "text": text, "conf": conf, "y0": min(ys), "y1": max(ys), "x0": min(xs)})
+    entries.sort(key=lambda d: (d["y0"] + d["y1"]) / 2)
+
+    lines = []
+    for e in entries:
+        placed = False
+        for line in lines:
+            overlap = min(e["y1"], line["y1"]) - max(e["y0"], line["y0"])
+            min_h = min(e["y1"] - e["y0"], line["y1"] - line["y0"]) or 1
+            if overlap > 0.5 * min_h:
+                line["words"].append(e)
+                line["y0"] = min(line["y0"], e["y0"])
+                line["y1"] = max(line["y1"], e["y1"])
+                placed = True
+                break
+        if not placed:
+            lines.append({"y0": e["y0"], "y1": e["y1"], "words": [e]})
+
+    lines.sort(key=lambda l: (l["y0"] + l["y1"]) / 2)
+    ordered = []
+    for line in lines:
+        line["words"].sort(key=lambda d: d["x0"])
+        ordered.extend(line["words"])
+    return [(e["pts"], e["text"], e["conf"]) for e in ordered]
+
+
+def _ro_check():
+    # 2 "baris" sengaja dibuat miring (y kiri != y kanan) supaya sort
+    # satu-kunci lama akan salah, tapi pengelompokan-baris tetap benar.
+    fake = [
+        ([[50, 12], [90, 10], [90, 20], [50, 22]], "kanan1", 0.9),   # baris 1, kanan, y~10-22
+        ([[0, 0], [40, 2], [40, 12], [0, 10]], "kiri1", 0.9),        # baris 1, kiri, y~0-12 (tumpang tindih baris 1)
+        ([[0, 100], [40, 100], [40, 110], [0, 110]], "kiri2", 0.9),  # baris 2, kiri
+        ([[50, 100], [90, 100], [90, 110], [50, 110]], "kanan2", 0.9),  # baris 2, kanan
+    ]
+    out = [t[1] for t in _reading_order(fake)]
+    assert out == ["kiri1", "kanan1", "kiri2", "kanan2"], f"urutan baca salah: {out}"
+
+
+_ro_check()
 
 
 def _strip_bio(label):
@@ -181,21 +300,41 @@ def _norm_box(pts, w, h):
     return [min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)]
 
 
-def _reconstruct(words, labels):
-    ents, cur_field, cur_words = [], None, []
-    for w, lab in zip(words, labels):
+def _same_line(box_a, box_b):
+    _, y0a, _, y1a = box_a
+    _, y0b, _, y1b = box_b
+    overlap = min(y1a, y1b) - max(y0a, y0b)
+    min_h = min(y1a - y0a, y1b - y0b) or 1
+    return overlap > 0.5 * min_h
+
+
+def _reconstruct(words, labels, boxes=None):
+    # `boxes` opsional (kompatibel dengan pemanggil lama/test tanpa box) --
+    # kalau ada, dipakai untuk MEMAKSA batas entity baru saat kata
+    # selanjutnya lompat baris, MESKI model bilang lanjutan (I-). Ditemukan
+    # dari struk Lotus's asli: model kerap salah memberi label I- lintas
+    # baris yang sama sekali tak berhubungan (header toko 2 baris + 2 nama
+    # barang pertama semua nyambung jadi SATU entity "menu.nm" raksasa)
+    # karena batas entity kontinu/baru itu sendiri di luar distribusi
+    # training model pada teks non-CORD. Baris fisik adalah sinyal batas
+    # yang jauh lebih bisa diandalkan daripada tebakan B-/I- model di sini.
+    ents, cur_field, cur_words, cur_box = [], None, [], None
+    for i, (w, lab) in enumerate(zip(words, labels)):
         field = _strip_bio(lab)
         is_b = lab.startswith("B-")
+        box = boxes[i] if boxes is not None else None
+        same_line = box is None or cur_box is None or _same_line(box, cur_box)
         if not field:
             if cur_field:
                 ents.append((cur_field, " ".join(cur_words)))
-            cur_field, cur_words = None, []
-        elif field == cur_field and not is_b:
+            cur_field, cur_words, cur_box = None, [], None
+        elif field == cur_field and not is_b and same_line:
             cur_words.append(w)
+            cur_box = box
         else:
             if cur_field:
                 ents.append((cur_field, " ".join(cur_words)))
-            cur_field, cur_words = field, [w]
+            cur_field, cur_words, cur_box = field, [w], box
     if cur_field:
         ents.append((cur_field, " ".join(cur_words)))
 
@@ -222,7 +361,43 @@ def _reconstruct(words, labels):
             _flush()
         cur[key] = text
 
+    # Field ringkasan (subtotal/pajak/total/dst) SELALU muncul setelah semua
+    # baris item di struk mana pun (kafe/CORD-v2 maupun retail) -- begitu
+    # wilayah ringkasan dimulai, apa pun yang model coba anggap sebagai field
+    # item sesudahnya hampir pasti teks footer (nomor kartu, poin member,
+    # "sign up for savings", dll -- di luar distribusi training model, jadi
+    # labelnya asal tebak). SENGAJA cuma 2 field paling bisa diandalkan
+    # posisinya yang dipakai sebagai PEMICU berhenti (bukan seluruh
+    # _SUMMARY_MAP): `sub_total.subtotal_price`/`total.total_price` selalu
+    # muncul PERSIS SEKALI, di akhir. Field lain seperti `total.menuqty_cnt`
+    # (jml_item) TERBUKTI dari struk nyata (Rosyam Mart, 15 item) kadang
+    # tersasar ke TENGAH daftar item -- kalau field itu ikut jadi pemicu,
+    # sisa item asli sesudahnya (3 item, termasuk RUSSET POTATO) ikut
+    # terbuang senyap. Field ringkasan lain tetap direkam ke `summary`
+    # seperti biasa, cuma tidak memicu berhenti. Item terakhir yang masih
+    # terbangun (`cur`) tetap di-flush dulu saat trigger aktif, supaya
+    # tidak ikut hilang.
+    _SUMMARY_STOP_FIELDS = ("sub_total.subtotal_price", "total.total_price")
+    seen_summary = False
     for field, text in ents:
+        if field in _SUMMARY_MAP:
+            if not seen_summary and field in _SUMMARY_STOP_FIELDS:
+                _flush()
+                seen_summary = True
+            # Bukan setdefault polos: satu field ringkasan kadang kepecah
+            # jadi >1 entity kalau ada kata lain nyelip di tengah (mis.
+            # "Sub Total" lalu "Rounding" lalu baru "61,20" -- ditemukan di
+            # struk Rosyam Mart nyata). setdefault akan mengunci ke entity
+            # PERTAMA ("Sub Total", tanpa angka) dan membuang nilai asli
+            # yang muncul belakangan. _summary_rank() memilih entity paling
+            # meyakinkan sebagai nominal uang (akhiran desimal jelas > ada
+            # angka sekadarnya > tanpa angka sama sekali).
+            key = _SUMMARY_MAP[field]
+            if key not in summary or _summary_rank(text) > _summary_rank(summary[key]):
+                summary[key] = text
+            continue
+        if seen_summary:
+            continue
         if field in NAME_FIELDS:
             if cur:
                 _flush()
@@ -235,9 +410,17 @@ def _reconstruct(words, labels):
             _set("subtotal", text)
         elif field == "menu.discountprice":
             _set("diskon_item", text)
-        elif field in _SUMMARY_MAP:
-            summary.setdefault(_SUMMARY_MAP[field], text)
     _flush()
+
+    # Baris tanpa nilai uang SAMA SEKALI (nama doang, mis. header toko yang
+    # kepotong di tengah jadi entity menu.nm sendiri) bukan item -- alat ini
+    # untuk split tagihan, baris tanpa angka apa pun tak bisa dibagi dan
+    # cuma sampah yang harus dihapus manual. Baris dengan nama None TAPI ada
+    # angkanya (bug lama Ronde 18) tetap dipertahankan.
+    items = [
+        it for it in items
+        if any(it.get(k) is not None for k in ("qty", "harga_satuan", "subtotal", "diskon_item"))
+    ]
 
     for it in items:
         for k in ("nama", "qty", "harga_satuan", "subtotal", "diskon_item"):
@@ -260,6 +443,13 @@ def _item_count_warning(ringkasan, items):
     if not jml_item_struk or jml_item_struk.get("value") is None:
         return None
     expected = int(jml_item_struk["value"])
+    # Struk pribadi/rumah tangga tak pernah punya ratusan item -- nilai
+    # segila ini (ditemukan dari struk Rosyam Mart nyata: "02544=", fragmen
+    # kode barang yang salah kena-label total.menuqty_cnt) hampir pasti
+    # salah baca, bukan jumlah item asli. Diamkan saja alih-alih memberi
+    # peringatan yang jelas tidak masuk akal.
+    if expected <= 0 or expected > 200:
+        return None
     if expected == len(items):
         return None
     return (
@@ -340,16 +530,17 @@ class ScanService:
             mag_ratio=self.mag_ratio, text_threshold=self.text_threshold, low_text=self.low_text,
         )
         t_ocr = time.time() - t0
-        ocr.sort(key=lambda r: (min(p[1] for p in r[0]), min(p[0] for p in r[0])))
+        ocr = _reading_order(ocr)
 
         words, boxes, confs = [], [], []
         for pts, text, conf in ocr:
-            text = (text or "").strip()
+            # (sudah di-strip & difilter kosong oleh _reading_order, tapi
+            # dicek lagi di sini karena tidak semua caller lewat situ)
             if not text:
                 continue
-            words.append(text)
             boxes.append(_norm_box(pts, w, h))
             confs.append(round(float(conf), 3))
+            words.append(_strip_barcode_prefix(text))
 
         if not words:
             return {
@@ -399,7 +590,7 @@ class ScanService:
             {"text": wd, "box": bx, "label": _strip_bio(lb) or "O", "bio": lb, "ocr_conf": cf}
             for wd, bx, lb, cf in zip(words, boxes, wl, confs)
         ]
-        items, ringkasan = _reconstruct(words, wl)
+        items, ringkasan = _reconstruct(words, wl, boxes)
         if not items:
             warnings.append("Tidak ada baris item terdeteksi — mungkin bukan struk belanja atau OCR rendah. Bisa lanjut input manual.")
         count_warning = _item_count_warning(ringkasan, items)
