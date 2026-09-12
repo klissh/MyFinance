@@ -94,7 +94,7 @@ export function resultToRows(result: ScanResult): ReviewRow[] {
         nama: (it.nama || "(tanpa nama)").trim(),
         qty: it.qty_value && it.qty_value > 0 ? it.qty_value : 1,
         hargaSatuan: it.harga_satuan_value ?? null,
-        subtotal: Math.max(0, Math.round(sub || 0)),
+        subtotal: Math.max(0, round2(sub || 0)),
         source: "scan" as const,
       }
     })
@@ -103,7 +103,7 @@ export function resultToRows(result: ScanResult): ReviewRow[] {
 /** Total dari ringkasan hasil scan (dipakai untuk auto-isi "Total struk"). */
 export function totalFromResult(result: ScanResult): number | null {
   const t = result.ringkasan?.total
-  return t && t.value != null && t.value > 0 ? Math.round(t.value) : null
+  return t && t.value != null && t.value > 0 ? round2(t.value) : null
 }
 
 export function emptyRow(): ReviewRow {

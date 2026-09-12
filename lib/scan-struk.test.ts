@@ -115,4 +115,16 @@ describe("resultToRows / totalFromResult", () => {
     expect(totalFromResult(makeResult())).toBeNull()
     expect(totalFromResult(makeResult({ ringkasan: { total: { text: "0", value: 0 } } }))).toBeNull()
   })
+
+  it("subtotal item RM dengan sen tidak dibulatkan jadi bulat (dulu bug: Math.round buang sen)", () => {
+    const result = makeResult({
+      items: [item({ nama: "Freshest B", subtotal_value: 2.39 })],
+    })
+    expect(resultToRows(result)[0].subtotal).toBe(2.39)
+  })
+
+  it("totalFromResult RM dengan sen tetap 2 desimal, bukan dibulatkan ke Ringgit bulat", () => {
+    const result = makeResult({ ringkasan: { total: { text: "15.25", value: 15.25 } } })
+    expect(totalFromResult(result)).toBe(15.25)
+  })
 })

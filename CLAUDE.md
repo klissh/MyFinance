@@ -669,6 +669,29 @@ karena berdampak ke seluruh alur `_reconstruct`, bukan patch kecil.
 Warning cross-check jumlah item di atas jadi mitigasi sementara paling
 murah: user tetap diberi tahu untuk cek manual saat selisihnya besar.
 
+## Ronde 19 (2026-09-12) — bug pembulatan sen hilang saat auto-isi dari scan
+
+User tanya "apakah field total harga otomatis terisi setelah scan?" — jawabannya
+ya, tapi penelusuran ketat menemukan bug baru (bukan bug item-hilang Ronde 18):
+`totalFromResult()` dan `resultToRows()` di `lib/scan-struk.ts` memakai
+`Math.round()` untuk mengisi "Total struk" dan `subtotal` tiap baris item —
+membulatkan ke Ringgit bulat, MEMBUANG SEN. Struk Lotus's dengan total asli
+RM 15.25 akan auto-terisi RM 15 (bukan bug tampilan — nilai yang tersimpan
+memang sudah salah sebelum sempat diedit user).
+
+Ini genuinely bug, bukan desain: `lib/currency.ts` sengaja mendukung MYR
+2-desimal penuh (ada UX "entri sen" khusus), kolom DB `item_total`/
+`unit_price`/`total_amount` semua `NUMERIC(15,2)`, dan file yang sama sudah
+punya `round2()` yang benar dipakai di `computeOwed()` — tapi titik masuk
+data dari scan (`resultToRows`, `totalFromResult`) sudah keburu membulatkan
+ke integer duluan sebelum sempat lewat `round2()`. Untuk IDR tidak berdampak
+(nilai OCR Rupiah memang sudah bulat, tak ada sen di struk).
+
+**Fix:** ganti `Math.round()` → `round2()` (fungsi yang sama, sudah
+diekspor) di kedua fungsi. Tambah 2 test regresi di
+`lib/scan-struk.test.ts` (subtotal item & total RM dengan sen tidak lagi
+dibulatkan ke bulat). Semua 29 test (`vitest run`) + `tsc --noEmit` lolos.
+
 ## Yang TIDAK perlu dikerjakan otomatis
 
 - Migrasi data dari Bizmo ke MSU — menunggu tindakan manusia (pemilik Bizmo invite member, atau ekspor file manual).
