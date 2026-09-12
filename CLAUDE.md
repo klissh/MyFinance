@@ -773,6 +773,44 @@ Perbaikan lebih lanjut untuk kasus ini butuh pengelompokan spasial penuh
 pemaksaan batas-baris yang sudah ditambahkan) — perubahan arsitektur lebih
 besar, didiskusikan terpisah kalau user mau lanjutkan.
 
+### Follow-up sesi sama — user tunjuk noise yang masih tersisa
+
+User tes ulang, tunjuk screenshot: "JALAN TENGKU AMPUAN" (alamat toko) dan
+"SYaHZanaNI" (nama kasir) masih muncul sebagai item di struk Rosyam Mart.
+Root cause: keduanya lolos dari filter "item tanpa nilai uang" Ronde 20
+karena masing-masing kebetulan dapat field **qty** (940100 dari alamat,
+5905202609070114 dari nomor invoice) — bukan `subtotal`/`harga_satuan`,
+tapi filter lama menganggap qty saja cukup untuk "punya nilai uang".
+Ditemukan juga kasus lebih parah saat audit ulang: timestamp cetakan
+struk "17:31:26" terbaca OCR jadi "17,31,26" (koma ganti titik dua), salah
+kena label `menu.price`, parser nominal salah kira 2 digit akhir jadi sen
+→ jadi item fantasi **"RM 1.731,26"** (28x lipat total struk asli 61,20) —
+ini bukan cuma noise kosmetik, tapi bisa merusak total split bill kalau
+tak ketahuan.
+
+**2 perbaikan tambahan di `_reconstruct()`:**
+1. Filter "item tanpa nilai uang" diperketat: cuma `subtotal` /
+   `harga_satuan` / `diskon_item` yang dihitung sebagai "field uang" —
+   `qty` sendirian TIDAK CUKUP lagi (qty besar ganjil dari alamat/nomor
+   invoice yang salah kena label bukan sinyal item asli).
+2. **Batas kewajaran harga per-item, baru**: satu baris item TAK MUNGKIN
+   lebih mahal dari total/subtotal keseluruhan struk — invarian universal.
+   Field `harga_satuan`/`subtotal`/`diskon_item` yang nilainya melebihi
+   `ringkasan.total` (atau `ringkasan.subtotal` kalau total tak
+   terdeteksi) dianggap salah baca dan dikosongkan; baris yang jadi kosong
+   total sesudahnya ikut dibuang oleh filter #1.
+
+2 test regresi baru ditambah (total 19, semua lolos), meniru persis kedua
+kasus nyata di atas.
+
+**Hasil verifikasi live setelah redeploy:** Rosyam Mart **22 → 13 item,
+dan SEMUA 13 sekarang item asli** (nol sampah alamat/kasir/timestamp-jadi-
+harga). `ringkasan.subtotal` tetap benar (61,20). Lotus's tidak berubah
+(5/5, tidak pernah punya noise jenis ini). 3 item di zona harga-per-kg yang
+rumit (RUSSET POTATO dkk) masih belum sepenuhnya pulih — tetap keterbatasan
+model yang sama seperti tercatat di atas, bukan regresi baru dari
+perbaikan ini.
+
 ## Yang TIDAK perlu dikerjakan otomatis
 
 - Migrasi data dari Bizmo ke MSU — menunggu tindakan manusia (pemilik Bizmo invite member, atau ekspor file manual).

@@ -226,6 +226,45 @@ def test_item_nama_none_dengan_angka_tetap_dipertahankan():
     assert items[0]["subtotal"] == "1000"
 
 
+def test_item_qty_only_tanpa_field_uang_dibuang():
+    # Regresi nyata (struk Rosyam Mart): alamat toko "JALAN TENGKU AMPUAN"
+    # dan nama kasir "SYaHZanaNI" salah kena label field qty dengan
+    # potongan nomor telepon/invoice sebagai "quantity"-nya (qty=940100,
+    # qty=5905202609070114) -- qty sebesar itu jelas bukan quantity barang
+    # asli. Tanpa field UANG (subtotal/harga_satuan/diskon) sama sekali,
+    # baris begini harus dibuang -- beda dari sebelumnya yang menganggap
+    # qty saja cukup untuk mempertahankan baris.
+    words = ["JALAN", "TENGKU AMPUAN", "940100", "A", "1", "1000", "1000"]
+    labels = [
+        "B-menu.nm", "I-menu.nm",
+        "B-menu.cnt",  # nyasar dari alamat, TANPA subtotal/harga_satuan
+        "B-menu.nm",
+        "B-menu.cnt", "B-menu.unitprice", "B-menu.price",
+    ]
+    items, _ = _reconstruct(words, labels)
+    assert len(items) == 1
+    assert items[0]["nama"] == "A"
+
+
+def test_item_dengan_subtotal_melebihi_total_struk_dianggap_salah_baca():
+    # Regresi nyata (struk Rosyam Mart): timestamp cetakan struk "17:31:26"
+    # terbaca OCR jadi "17,31,26" (koma menggantikan titik dua), salah kena
+    # label menu.price, parser nominal salah kira 2 digit terakhir jadi sen
+    # -> "RM 1.731,26" -- padahal total struk cuma RM 61,20. Satu item TAK
+    # MUNGKIN lebih mahal dari total keseluruhan struk; field seharusnya
+    # dikosongkan, baris tanpa field uang lain ikut dibuang.
+    words = ["A", "1", "30", "30", "17,31,26", "Sub Total", "61,20"]
+    labels = [
+        "B-menu.nm", "B-menu.cnt", "B-menu.unitprice", "B-menu.price",
+        "B-menu.price",  # timestamp nyasar, TANPA nama -> nama None
+        "B-sub_total.subtotal_price", "I-sub_total.subtotal_price",
+    ]
+    items, ringkasan = _reconstruct(words, labels)
+    assert ringkasan["subtotal"]["value"] == 61.2
+    assert len(items) == 1
+    assert items[0]["nama"] == "A" and items[0]["subtotal_value"] == 30
+
+
 def test_strip_barcode_prefix_pisahkan_barcode_dari_nama_barang():
     assert _strip_barcode_prefix("09555663102185 FRESHEST") == "FRESHEST"
     assert _strip_barcode_prefix("09555349113795   JAGUNG   MAN") == "JAGUNG   MAN"

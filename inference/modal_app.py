@@ -412,15 +412,45 @@ def _reconstruct(words, labels, boxes=None):
             _set("diskon_item", text)
     _flush()
 
-    # Baris tanpa nilai uang SAMA SEKALI (nama doang, mis. header toko yang
-    # kepotong di tengah jadi entity menu.nm sendiri) bukan item -- alat ini
-    # untuk split tagihan, baris tanpa angka apa pun tak bisa dibagi dan
-    # cuma sampah yang harus dihapus manual. Baris dengan nama None TAPI ada
-    # angkanya (bug lama Ronde 18) tetap dipertahankan.
+    # Baris tanpa field UANG sama sekali (subtotal/harga_satuan/diskon)
+    # bukan item -- alat ini untuk split tagihan, baris tanpa nilai uang tak
+    # bisa dibagi. SENGAJA tidak menghitung `qty` di sini (beda dari versi
+    # sebelumnya): ditemukan dari struk Rosyam Mart nyata, alamat toko
+    # ("JALAN TENGKU AMPUAN") dan nama kasir ("SYaHZanaNI") kadang salah
+    # kena label field qty dengan potongan nomor telepon/invoice sebagai
+    # "quantity"-nya (mis. qty=940100, qty=5905202609070114) -- qty sebesar
+    # itu jelas bukan quantity barang asli, dan tanpa field uang apa pun
+    # baris begini pasti sampah, bukan item. Baris dengan nama None TAPI ada
+    # field uangnya (bug lama Ronde 18) tetap dipertahankan.
     items = [
         it for it in items
-        if any(it.get(k) is not None for k in ("qty", "harga_satuan", "subtotal", "diskon_item"))
+        if any(it.get(k) is not None for k in ("harga_satuan", "subtotal", "diskon_item"))
     ]
+
+    full = {v: None for v in ("subtotal", "pajak", "diskon", "layanan", "total")}
+    full.update(summary)
+    full = {k: ({"text": v, "value": _amount_value(v)} if v is not None else None) for k, v in full.items()}
+
+    # Satu baris item TAK MUNGKIN lebih mahal dari total keseluruhan struk --
+    # invarian ini berlaku universal, apa pun bahasa/formatnya. Ditemukan
+    # dari struk Rosyam Mart nyata: timestamp cetakan struk "17:31:26"
+    # terbaca OCR sebagai "17,31,26" (koma menggantikan titik dua), salah
+    # kena label menu.price, lalu parser nominal salah mengira 2 digit
+    # terakhir sebagai sen -> "RM 1.731,26", padahal total struk cuma
+    # RM 61,20. Pakai subtotal/total struk (mana pun yang lebih dulu
+    # ketemu) sebagai batas atas kewajaran; field uang yang melampauinya
+    # dianggap salah baca dan dikosongkan, BUKAN nilai valid yang kebetulan
+    # besar.
+    grand = full["total"]["value"] if full["total"] else (full["subtotal"]["value"] if full["subtotal"] else None)
+    if grand:
+        for it in items:
+            for k in ("harga_satuan", "subtotal", "diskon_item"):
+                if it.get(k) is not None and (_amount_value(it[k]) or 0) > grand:
+                    it[k] = None
+        items = [
+            it for it in items
+            if any(it.get(k) is not None for k in ("harga_satuan", "subtotal", "diskon_item"))
+        ]
 
     for it in items:
         for k in ("nama", "qty", "harga_satuan", "subtotal", "diskon_item"):
@@ -429,9 +459,6 @@ def _reconstruct(words, labels, boxes=None):
         it["harga_satuan_value"] = _amount_value(it["harga_satuan"])
         it["subtotal_value"] = _amount_value(it["subtotal"])
 
-    full = {v: None for v in ("subtotal", "pajak", "diskon", "layanan", "total")}
-    full.update(summary)
-    full = {k: ({"text": v, "value": _amount_value(v)} if v is not None else None) for k, v in full.items()}
     return items, full
 
 
