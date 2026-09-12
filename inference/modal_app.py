@@ -98,6 +98,18 @@ _SUMMARY_MAP = {
     "total.menuqty_cnt": "jml_item",
 }
 
+# Pengelompokan field level-item untuk _reconstruct(). `menu.sub.*` (topping/
+# tambahan yang menempel di 1 baris menu, mis. "JASMINE MT (L)" 24.000 dengan
+# sub "COCONUT JELLY (L)" 4.000) DISENGAJA disamakan dengan field utama
+# (bukan digabung ke nama item induk) supaya sub-item selalu jadi BARIS
+# TERSENDIRI dengan harga sendiri — keputusan produk: sub-item harus bisa
+# di-assign ke kelompok pembagi yang beda dari item induknya (spec-fix-item-
+# hilang-scan.md bagian 3).
+NAME_FIELDS = ("menu.nm", "menu.sub.nm")
+QTY_FIELDS = ("menu.cnt", "menu.num", "menu.sub.cnt")
+PRICE_FIELDS = ("menu.unitprice", "menu.sub.unitprice")
+SUBTOTAL_FIELDS = ("menu.price", "menu.itemsubtotal", "menu.sub.price")
+
 
 # ---------------------------------------------------------------------------
 # Util pipeline (murni, tanpa framework)
@@ -189,33 +201,46 @@ def _reconstruct(words, labels):
 
     items, cur, summary = [], {}, {}
 
+    # Tutup ("flush") item yang sedang dibangun. Dulu hanya dipicu oleh
+    # menu.nm baru -- kalau nama satu item gagal terdeteksi (realistis di
+    # foto struk asli yang miring/blur), field angkanya menimpa milik item
+    # SEBELUMNYA secara senyap alih-alih memicu flush (lihat
+    # spec-fix-item-hilang-scan.md). Sekarang: field APA PUN yang mau
+    # menimpa slot yang sudah terisi = sinyal item baru sudah mulai, dan
+    # setiap slot yang sempat terisi (bukan cuma nama+subtotal) membuat
+    # baris itu layak disimpan -- meski `nama` berakhir None (dikoreksi
+    # manual di layar review), datanya tidak hilang/tertimpa diam-diam.
     def _flush():
         nonlocal cur
-        if cur.get("nama") or cur.get("subtotal") or cur.get("harga_satuan"):
+        if cur:
             items.append(cur)
         cur = {}
 
+    def _set(key, text):
+        nonlocal cur
+        if cur.get(key) is not None:
+            _flush()
+        cur[key] = text
+
     for field, text in ents:
-        if field == "menu.nm":
-            if cur.get("nama") or cur.get("subtotal"):
+        if field in NAME_FIELDS:
+            if cur:
                 _flush()
             cur["nama"] = text
-        elif field in ("menu.cnt", "menu.num", "menu.sub.cnt"):
-            cur["qty"] = text
-        elif field in ("menu.unitprice", "menu.sub.unitprice"):
-            cur["harga_satuan"] = text
-        elif field in ("menu.price", "menu.itemsubtotal", "menu.sub.price"):
-            cur["subtotal"] = text
+        elif field in QTY_FIELDS:
+            _set("qty", text)
+        elif field in PRICE_FIELDS:
+            _set("harga_satuan", text)
+        elif field in SUBTOTAL_FIELDS:
+            _set("subtotal", text)
         elif field == "menu.discountprice":
-            cur["diskon_item"] = text
-        elif field == "menu.sub.nm":
-            cur["nama"] = (cur.get("nama", "") + " " + text).strip()
+            _set("diskon_item", text)
         elif field in _SUMMARY_MAP:
             summary.setdefault(_SUMMARY_MAP[field], text)
     _flush()
 
     for it in items:
-        for k in ("qty", "harga_satuan", "subtotal", "diskon_item"):
+        for k in ("nama", "qty", "harga_satuan", "subtotal", "diskon_item"):
             it.setdefault(k, None)
         it["qty_value"] = _amount_value(it["qty"])
         it["harga_satuan_value"] = _amount_value(it["harga_satuan"])
@@ -225,6 +250,22 @@ def _reconstruct(words, labels):
     full.update(summary)
     full = {k: ({"text": v, "value": _amount_value(v)} if v is not None else None) for k, v in full.items()}
     return items, full
+
+
+def _item_count_warning(ringkasan, items):
+    # Cross-check ringkasan.jml_item (dari total.menuqty_cnt) vs jumlah baris
+    # item hasil _reconstruct -- sinyal murah untuk "kemungkinan ada yang
+    # tergabung/hilang" tanpa perlu tahu baris mana yang salah.
+    jml_item_struk = ringkasan.get("jml_item")
+    if not jml_item_struk or jml_item_struk.get("value") is None:
+        return None
+    expected = int(jml_item_struk["value"])
+    if expected == len(items):
+        return None
+    return (
+        f"Struk menyatakan {expected} item, tapi cuma {len(items)} "
+        f"yang terdeteksi — cek manual, kemungkinan ada yang tergabung/hilang."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -361,6 +402,9 @@ class ScanService:
         items, ringkasan = _reconstruct(words, wl)
         if not items:
             warnings.append("Tidak ada baris item terdeteksi — mungkin bukan struk belanja atau OCR rendah. Bisa lanjut input manual.")
+        count_warning = _item_count_warning(ringkasan, items)
+        if count_warning:
+            warnings.append(count_warning)
         mean_conf = float(sum(confs) / len(confs)) if confs else 0.0
         if mean_conf < 0.5:
             warnings.append(f"Rata-rata keyakinan OCR rendah ({mean_conf:.2f}) — kemungkinan banyak salah baca.")

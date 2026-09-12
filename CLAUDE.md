@@ -611,6 +611,64 @@ Header nama/alamat toko yang panjang juga makan token — belum difilter
 Kedua perbaikan (parsing nominal Ronde 16 + filter barcode Ronde 17) sudah
 di-redeploy & diverifikasi ulang ke endpoint live dengan curl langsung.
 
+## Ronde 18 (2026-09-12) — perbaikan item hilang (`spec-fix-item-hilang-scan.md`)
+
+Root cause "Masalah nyata #2" Ronde 17 sudah dikonfirmasi lewat baca kode
+langsung (bukan dugaan lagi): `_reconstruct()` cuma flush item lama saat
+`menu.nm` BARU terdeteksi. Kalau nama satu item gagal terdeteksi (realistis
+di foto miring/blur), field `qty`/`harga_satuan`/`subtotal` miliknya
+menimpa slot item SEBELUMNYA secara senyap tanpa memicu flush — datanya
+tidak hilang dari struk, tapi salah tempel & bikin item lain kelihatan
+salah harga secara diam-diam.
+
+**Perbaikan (`inference/modal_app.py`):**
+- `_reconstruct()` ditulis ulang: helper `_set(key, text)` otomatis flush
+  kalau slot yang mau diisi sudah terisi (sinyal item baru sudah mulai
+  walau nama gagal terdeteksi); `_flush()` digeneralisasi jadi `if cur:`
+  (baris apa pun yang punya isi disimpan, bukan cuma yang punya
+  `nama`/`subtotal`). Beda dari contoh literal di spec: `menu.sub.nm`
+  disatukan dengan `menu.nm` lewat `NAME_FIELDS` (bukan digabung sebagai
+  catatan ke nama induk) — konsisten dengan keputusan user via
+  AskUserQuestion ("Ya, jadikan baris terpisah") bahwa sub-item CORD selalu
+  jadi baris independen, bukan modifier.
+- Cross-check jumlah item ditambahkan: `ringkasan.jml_item` (dari
+  `total.menuqty_cnt`) dibandingkan `len(items)`, mismatch memicu warning
+  "cek manual, kemungkinan ada yang tergabung/hilang". Diekstrak jadi
+  fungsi murni `_item_count_warning()` supaya bisa dites tanpa `_process()`
+  penuh (butuh OCR+model kalau tidak).
+- Test baru `inference/test_reconstruct.py` (pytest, 7 skenario: item
+  normal, regresi utama (nama gagal terdeteksi di tengah, dulu bikin data
+  tertimpa senyap — sekarang jadi baris `nama: null` terpisah), flush di
+  akhir struk tanpa nama, `menu.sub.*` jadi baris terpisah, 3 skenario
+  cross-check jumlah item). Semua lolos (`pytest inference/test_reconstruct.py`
+  → 7 passed).
+
+**Verifikasi live setelah redeploy + `modal container list` kosong
+(kontainer lama dimatikan, request berikutnya pasti pakai kode baru):**
+- Struk Lotus's: "JAGUNG MAN" (5.49) yang tadinya hilang total sekarang
+  muncul sebagai baris sendiri (nama tidak selalu bersih — kadang cuma "B"
+  dari fragmen tetangga — tapi **harganya tidak lagi hilang/menimpa item
+  lain**, sesuai tujuan perbaikan). Warning cross-check aktif benar: "5
+  item struk vs 16 terdeteksi".
+- Struk Rosyam Mart: 15/15 nilai subtotal item asli masih persis cocok
+  ground truth (termasuk bug lama yang sudah diketahui: USA RUSSET POTATO
+  terbaca 5.50 padahal seharusnya 3.50 — bukan regresi baru, sudah
+  didokumentasikan Ronde 17). Warning cross-check aktif: "15 item struk vs
+  34 terdeteksi".
+
+**Catatan penting (bukan bug baru, keterbatasan terpisah):** jumlah "item"
+terdeteksi jauh lebih banyak dari isi struk asli di kedua foto (16 vs 5,
+34 vs 15) karena model kadang melabeli teks header/footer non-item
+(alamat toko, nama kasir, promo "SIGN UP NOW", dll) sebagai `menu.nm` —
+ini murni akurasi model pada foto asli yang jauh lebih berisik dari
+gambar training CORD-v2, BUKAN dampak dari fix ini (perilaku flush-per-nama
+untuk field `menu.nm` baru sudah sama dari kode lama). Perbaikan yang
+benar-benar mengatasi ini adalah pengelompokan berbasis posisi/koordinat
+`box`, yang secara eksplisit di luar scope spec ini (lihat Section 5)
+karena berdampak ke seluruh alur `_reconstruct`, bukan patch kecil.
+Warning cross-check jumlah item di atas jadi mitigasi sementara paling
+murah: user tetap diberi tahu untuk cek manual saat selisihnya besar.
+
 ## Yang TIDAK perlu dikerjakan otomatis
 
 - Migrasi data dari Bizmo ke MSU — menunggu tindakan manusia (pemilik Bizmo invite member, atau ekspor file manual).
